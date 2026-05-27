@@ -285,7 +285,7 @@ RiskFlag
 ### Milestone 4：反向票策略引擎
 
 - [x] 支持销售地/币种变体搜索。
-- [ ] 支持 multi-city 候选生成。
+- [x] 支持 multi-city 候选生成。
 - [x] 支持可配置日期弹性窗口。
 - [x] 支持 split-ticket 检测和风险标记。
 - [x] 默认排除 hidden-city；若未来支持，必须单独开关和强风险提示。
@@ -305,7 +305,7 @@ RiskFlag
 - [x] 建立 watchlist。
 - [ ] 支持定时重新查询。
 - [x] 支持降价阈值告警。
-- [ ] 生成价格趋势报告。
+- [x] 生成价格趋势报告。
 
 ### Milestone 7：订购辅助
 

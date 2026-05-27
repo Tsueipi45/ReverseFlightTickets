@@ -48,6 +48,7 @@ def test_watchlist_repository_and_price_drop_alert() -> None:
         request=request,
         target_amount=Decimal("550.00"),
         target_currency="USD",
+        provider_names=("manual",),
     )
     repository = InMemoryWatchlistRepository()
 
@@ -58,3 +59,4 @@ def test_watchlist_repository_and_price_drop_alert() -> None:
     assert repository.list() == (item,)
     assert alert is not None
     assert alert.provider == "manual"
+    assert item.to_dict()["provider_names"] == ["manual"]

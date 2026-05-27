@@ -5,6 +5,7 @@ from reverse_flight_tickets.storage.repository import (
     InMemoryRepository,
     SearchRepository,
     SqliteSearchRepository,
+    SqliteWatchlistRepository,
 )
 
 __all__ = [
@@ -13,4 +14,5 @@ __all__ = [
     "SearchRepository",
     "SearchSnapshot",
     "SqliteSearchRepository",
+    "SqliteWatchlistRepository",
 ]

@@ -39,6 +39,7 @@ class ProviderRun(BaseModel):
                 "source_market": self.variant.source_market,
                 "currency": self.variant.currency,
                 "date_shift_days": self.variant.date_shift_days,
+                "stopover": self.variant.stopover,
             },
             "offer_count": len(self.offers),
             "error": self.error,
@@ -127,6 +128,14 @@ class SearchOrchestrator:
         variant: SearchVariant,
         context: ProviderContext | None,
     ) -> ProviderRun:
+        if self._requires_multi_city(variant) and not provider.capabilities.supports_multi_city:
+            return ProviderRun(
+                provider=provider.name,
+                status="skipped",
+                variant=variant,
+                error="provider does not support multi-city variants",
+                error_type="UnsupportedCapability",
+            )
         timeout = context.timeout_seconds if context else self.timeout_seconds
         try:
             offers = await asyncio.wait_for(
@@ -154,6 +163,9 @@ class SearchOrchestrator:
         if all(run.status == "error" for run in provider_runs):
             return ("all providers failed or are not configured",)
         return ()
+
+    def _requires_multi_city(self, variant: SearchVariant) -> bool:
+        return variant.stopover is not None or len(variant.request.segments) > 2
 
     def _deduplicate(self, offers: tuple[Offer, ...]) -> tuple[Offer, ...]:
         seen: set[tuple[object, ...]] = set()

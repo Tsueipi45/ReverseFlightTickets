@@ -5,12 +5,19 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import Annotated, Any
+from decimal import Decimal
+from typing import Annotated, Any, Sequence
 
 import typer
 
 from reverse_flight_tickets.config import AppConfig
 from reverse_flight_tickets.domain import SearchRequest
+from reverse_flight_tickets.monitoring import (
+    PriceDropAlert,
+    WatchlistItem,
+    build_price_trend_report,
+    evaluate_price_drop,
+)
 from reverse_flight_tickets.providers import (
     AmadeusProvider,
     DuffelProvider,
@@ -27,10 +34,16 @@ from reverse_flight_tickets.providers.research import (
 )
 from reverse_flight_tickets.search.filters import normalize_carrier_codes
 from reverse_flight_tickets.search import SearchOrchestrator, SearchRunResult
-from reverse_flight_tickets.storage import SearchSnapshot, SqliteSearchRepository
+from reverse_flight_tickets.storage import (
+    SearchSnapshot,
+    SqliteSearchRepository,
+    SqliteWatchlistRepository,
+)
 
 
 app = typer.Typer(help="ReverseFlightTickets CLI")
+watchlist_app = typer.Typer(help="Manage and run price watchlists")
+app.add_typer(watchlist_app, name="watchlist")
 
 PROVIDER_FACTORIES = {
     "skyscanner": SkyscannerProvider,
@@ -92,6 +105,13 @@ def search(
         str | None,
         typer.Option("--currencies", help="Comma-separated currencies, e.g. USD,CNY"),
     ] = None,
+    stopover: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--stopover",
+            help="Stopover airport/city code for generated multi-city candidates; repeatable.",
+        ),
+    ] = None,
     max_layover_hours: Annotated[int | None, typer.Option("--max-layover-hours")] = None,
     include_split_ticket: Annotated[bool, typer.Option("--include-split-ticket")] = False,
     include_self_transfer: Annotated[bool, typer.Option("--include-self-transfer")] = False,
@@ -139,6 +159,7 @@ def search(
             cabin=cabin,
             markets=markets,
             currencies=currencies,
+            stopover=tuple(stopover or ()),
             max_layover_hours=max_layover_hours,
             include_split_ticket=include_split_ticket,
             include_self_transfer=include_self_transfer,
@@ -159,6 +180,165 @@ def search(
         raise typer.BadParameter("output must be table or json")
 
 
+@watchlist_app.command("add")
+def watchlist_add(
+    json_input: Annotated[
+        Path | None,
+        typer.Option("--json-input", help="Path to a SearchRequest JSON file"),
+    ] = None,
+    origin: Annotated[str | None, typer.Option(help="Origin airport/city code")] = None,
+    destination: Annotated[str | None, typer.Option(help="Destination airport/city code")] = None,
+    departure_date: Annotated[
+        str | None,
+        typer.Option("--departure-date", help="Departure date, YYYY-MM-DD"),
+    ] = None,
+    return_date: Annotated[
+        str | None,
+        typer.Option("--return-date", help="Return date, YYYY-MM-DD"),
+    ] = None,
+    target_amount: Annotated[
+        str | None,
+        typer.Option("--target-amount", help="Alert threshold amount"),
+    ] = None,
+    target_currency: Annotated[
+        str | None,
+        typer.Option("--target-currency", help="Alert threshold currency"),
+    ] = None,
+    provider: Annotated[
+        list[str] | None,
+        typer.Option("--provider", help="Provider to include when running this watchlist item."),
+    ] = None,
+    db_url: Annotated[
+        str | None,
+        typer.Option("--db-url", help="SQLAlchemy database URL for watchlists"),
+    ] = None,
+) -> None:
+    """Add a search request to the local watchlist."""
+
+    config = AppConfig.from_env()
+    request = _request_from_values(
+        config=config,
+        json_input=json_input,
+        origin=origin,
+        destination=destination,
+        departure_date=departure_date,
+        return_date=return_date,
+        date_flexibility_days=0,
+        passenger_count=None,
+        cabin=None,
+        markets=None,
+        currencies=None,
+        stopover=(),
+        max_layover_hours=None,
+        include_split_ticket=False,
+        include_self_transfer=False,
+        include_hidden_city=False,
+    )
+    item = WatchlistItem(
+        request=request,
+        target_amount=Decimal(target_amount) if target_amount else None,
+        target_currency=target_currency.upper() if target_currency else None,
+        provider_names=tuple(provider or ()),
+    )
+    repository = SqliteWatchlistRepository(db_url or config.database_url)
+    typer.echo(repository.add(item))
+
+
+@watchlist_app.command("list")
+def watchlist_list(
+    db_url: Annotated[
+        str | None,
+        typer.Option("--db-url", help="SQLAlchemy database URL for watchlists"),
+    ] = None,
+    output: Annotated[str, typer.Option("--output", help="Output format: table or json")] = "table",
+) -> None:
+    """List local watchlist items."""
+
+    config = AppConfig.from_env()
+    repository = SqliteWatchlistRepository(db_url or config.database_url)
+    items = repository.list()
+    if output == "json":
+        typer.echo(json.dumps([item.to_dict() for item in items], ensure_ascii=False, indent=2))
+        return
+    if output != "table":
+        raise typer.BadParameter("output must be table or json")
+    if not items:
+        typer.echo("No watchlist items.")
+        return
+    rows = [("item_id", "origin", "destination", "departure", "target", "providers")]
+    for item in items:
+        target = (
+            f"{item.target_amount} {item.target_currency or item.request.allowed_currencies[0]}"
+            if item.target_amount is not None
+            else "-"
+        )
+        rows.append(
+            (
+                item.item_id,
+                item.request.origin,
+                item.request.destination,
+                item.request.departure_date.isoformat(),
+                target,
+                ",".join(item.provider_names) if item.provider_names else "-",
+            )
+        )
+    typer.echo(_format_rows(rows))
+
+
+@watchlist_app.command("run")
+def watchlist_run(
+    item_id: Annotated[
+        str | None,
+        typer.Option("--item-id", help="Run a single watchlist item by id"),
+    ] = None,
+    provider: Annotated[
+        list[str] | None,
+        typer.Option("--provider", help="Override providers for this run; repeatable."),
+    ] = None,
+    include_research: Annotated[bool, typer.Option("--include-research")] = False,
+    db_url: Annotated[
+        str | None,
+        typer.Option("--db-url", help="SQLAlchemy database URL for watchlists and snapshots"),
+    ] = None,
+    output: Annotated[str, typer.Option("--output", help="Output format: table or json")] = "table",
+) -> None:
+    """Run local watchlist items once and persist snapshots."""
+
+    results = asyncio.run(
+        _run_watchlist(
+            item_id=item_id,
+            provider=tuple(provider or ()),
+            include_research=include_research,
+            db_url=db_url,
+        )
+    )
+    if output == "json":
+        typer.echo(json.dumps(results, ensure_ascii=False, indent=2))
+        return
+    if output != "table":
+        raise typer.BadParameter("output must be table or json")
+    if not results:
+        typer.echo("No watchlist items to run.")
+        return
+    rows = [("item_id", "snapshot_id", "offers", "alert", "latest", "change")]
+    for result in results:
+        alerts = result["alerts"]
+        alert = alerts[0] if isinstance(alerts, list) and alerts else None
+        trend = result["trend"]
+        latest = trend["latest"] if isinstance(trend, dict) else None
+        rows.append(
+            (
+                str(result["item_id"]),
+                str(result["snapshot_id"]),
+                str(result["offer_count"]),
+                f"{alert['amount']} {alert['currency']}" if isinstance(alert, dict) else "-",
+                f"{latest['lowest_amount']} {latest['currency']}" if isinstance(latest, dict) else "-",
+                str(trend.get("change_from_previous") or "-") if isinstance(trend, dict) else "-",
+            )
+        )
+    typer.echo(_format_rows(rows))
+
+
 async def _run_search(
     *,
     json_input: Path | None = None,
@@ -171,6 +351,7 @@ async def _run_search(
     cabin: str | None = None,
     markets: str | None = None,
     currencies: str | None = None,
+    stopover: tuple[str, ...] = (),
     max_layover_hours: int | None = None,
     include_split_ticket: bool = False,
     include_self_transfer: bool = False,
@@ -195,6 +376,7 @@ async def _run_search(
         cabin=cabin,
         markets=markets,
         currencies=currencies,
+        stopover=stopover,
         max_layover_hours=max_layover_hours,
         include_split_ticket=include_split_ticket,
         include_self_transfer=include_self_transfer,
@@ -221,6 +403,70 @@ async def _run_search(
     return result
 
 
+async def _run_watchlist(
+    *,
+    item_id: str | None = None,
+    provider: tuple[str, ...] = (),
+    include_research: bool = False,
+    db_url: str | None = None,
+) -> list[dict[str, object]]:
+    config = AppConfig.from_env()
+    database_url = db_url or config.database_url
+    watchlist_repository = SqliteWatchlistRepository(database_url)
+    snapshot_repository = SqliteSearchRepository(database_url)
+    items = watchlist_repository.list()
+    if item_id:
+        items = tuple(item for item in items if item.item_id == item_id)
+
+    context = ProviderContext(
+        credentials=config.provider_secret_map(),
+        timeout_seconds=config.provider_timeout_seconds,
+    )
+    results: list[dict[str, object]] = []
+    for item in items:
+        provider_names = provider or item.provider_names
+        providers = _providers_from_names(provider_names, include_research=include_research)
+        orchestrator = SearchOrchestrator(
+            providers,
+            timeout_seconds=config.provider_timeout_seconds,
+            excluded_carriers=DEFAULT_EXCLUDED_CARRIERS,
+        )
+        search_result = await orchestrator.search(item.request, context)
+        snapshot = SearchSnapshot.from_search_result(search_result)
+        snapshot_id = snapshot_repository.save_search_snapshot(snapshot)
+        alerts = _watchlist_alerts(item, search_result)
+        trend = build_price_trend_report(
+            snapshot_repository.list_search_snapshots(item.request)
+        )
+        results.append(
+            {
+                "item_id": item.item_id,
+                "snapshot_id": snapshot_id,
+                "offer_count": len(search_result.offers),
+                "alerts": [alert.to_dict() for alert in alerts],
+                "trend": trend.to_dict(),
+                "warnings": list(search_result.warnings),
+            }
+        )
+    return results
+
+
+def _watchlist_alerts(
+    item: WatchlistItem,
+    result: SearchRunResult,
+) -> tuple[PriceDropAlert, ...]:
+    if item.target_amount is None:
+        return ()
+    alerts = []
+    for offer in result.offers:
+        if item.target_currency and offer.currency != item.target_currency:
+            continue
+        alert = evaluate_price_drop(offer, item.target_amount)
+        if alert:
+            alerts.append(alert)
+    return tuple(alerts)
+
+
 def _excluded_carriers(
     *,
     exclude_carrier: tuple[str, ...],
@@ -243,6 +489,7 @@ def _request_from_values(
     cabin: str | None,
     markets: str | None,
     currencies: str | None,
+    stopover: tuple[str, ...],
     max_layover_hours: int | None,
     include_split_ticket: bool,
     include_self_transfer: bool,
@@ -262,6 +509,7 @@ def _request_from_values(
         "cabin": cabin,
         "allowed_markets": markets,
         "allowed_currencies": currencies,
+        "stopovers": stopover,
         "max_layover_hours": max_layover_hours,
     }
     data.update({key: value for key, value in overrides.items() if value not in (None, "")})
@@ -352,18 +600,23 @@ def _format_table(result: SearchRunResult) -> str:
                 offer.booking_link or "-",
             )
         )
-    widths = [max(len(row[index]) for row in rows) for index in range(len(rows[0]))]
-    lines = []
-    for row_index, row in enumerate(rows):
-        lines.append(" | ".join(value.ljust(widths[index]) for index, value in enumerate(row)))
-        if row_index == 0:
-            lines.append("-+-".join("-" * width for width in widths))
+    lines = _format_rows(rows).splitlines()
     if result.recommendations.best_value:
         lines.append("")
         lines.append(f"Best value: {result.recommendations.best_value.provider}")
     if result.warnings:
         lines.append("")
         lines.extend(f"Warning: {warning}" for warning in result.warnings)
+    return "\n".join(lines)
+
+
+def _format_rows(rows: Sequence[Sequence[str]]) -> str:
+    widths = [max(len(row[index]) for row in rows) for index in range(len(rows[0]))]
+    lines = []
+    for row_index, row in enumerate(rows):
+        lines.append(" | ".join(value.ljust(widths[index]) for index, value in enumerate(row)))
+        if row_index == 0:
+            lines.append("-+-".join("-" * width for width in widths))
     return "\n".join(lines)
 
 

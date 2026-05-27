@@ -11,9 +11,9 @@ ReverseFlightTickets 是一个用于反向票查询与订购流程辅助的 Pyth
 - CLI 查价聚合：支持命令行参数和 JSON 请求输入。
 - 官方/API provider：已支持 Duffel sandbox 和 Amadeus Self-Service test API。
 - 人工核验 deep link：已支持 Skyscanner、Trip.com、飞猪、Google Flights research、Kiwi research。
-- 搜索扩展：支持销售地/币种组合和可配置日期弹性窗口。
+- 搜索扩展：支持销售地/币种组合、可配置日期弹性窗口和 stopover multi-city 候选。
 - 风险标记：支持人工核验、provider 未验证、split-ticket、自转机、hidden-city 默认排除等标签。
-- 快照与追踪：支持 SQLite 搜索快照、watchlist 模型和降价阈值告警。
+- 快照与追踪：支持 SQLite 搜索快照、SQLite watchlist、一次性 watchlist run、降价阈值告警和趋势摘要。
 - 订购辅助：支持 booking handoff、购买前检查清单、人工确认订单记录、订单状态和票号字段。
 
 ## 实施方案
@@ -108,6 +108,12 @@ rft search --origin PVG --destination LAX --departure-date 2026-10-01 --return-d
 rft search --origin PVG --destination LAX --departure-date 2026-10-01 --return-date 2026-10-15 --date-flexibility-days 2 --output json
 ```
 
+生成 stopover multi-city 候选：
+
+```bash
+rft search --origin PVG --destination LAX --departure-date 2026-10-01 --stopover HND --provider duffel --output json
+```
+
 只查询指定 provider：
 
 ```bash
@@ -181,6 +187,24 @@ rft search --origin PVG --destination LAX --departure-date 2026-10-01 --return-d
 
 ```bash
 rft search --origin LHR --destination JFK --departure-date 2026-10-01 --provider duffel --exclude-carrier BA
+```
+
+添加 watchlist：
+
+```bash
+rft watchlist add --origin PVG --destination LAX --departure-date 2026-10-01 --target-amount 500 --target-currency USD --provider skyscanner
+```
+
+列出 watchlist：
+
+```bash
+rft watchlist list
+```
+
+执行一次 watchlist 查询并保存快照：
+
+```bash
+rft watchlist run
 ```
 
 ## 项目结构

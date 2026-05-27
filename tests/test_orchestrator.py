@@ -25,6 +25,10 @@ class StaticProvider:
         return self.offers
 
 
+class MultiCityProvider(StaticProvider):
+    capabilities = ProviderCapability(supports_multi_city=True)
+
+
 def test_orchestrator_returns_manual_provider_offer() -> None:
     request = SearchRequest.from_mapping(
         {
@@ -128,3 +132,46 @@ def test_orchestrator_expands_date_flexibility_and_labels_policy() -> None:
     assert {run.variant.date_shift_days for run in result.provider_runs} == {-1, 0, 1}
     assert RiskFlag.SPLIT_TICKET in result.offers[0].risk_flags
     assert RiskFlag.HIDDEN_CITY_EXCLUDED in result.offers[0].risk_flags
+
+
+def test_orchestrator_generates_stopover_multi_city_variants() -> None:
+    request = SearchRequest.from_mapping(
+        {
+            "origin": "PVG",
+            "destination": "LAX",
+            "departure_date": "2026-10-01",
+            "stopovers": "HND",
+        }
+    )
+    offer = Offer(
+        provider="mock",
+        source_market="US",
+        currency="USD",
+        total_amount="100.00",
+    )
+
+    result = __import__("asyncio").run(SearchOrchestrator([MultiCityProvider((offer,))]).search(request))
+
+    assert len(result.provider_runs) == 2
+    assert {run.variant.stopover for run in result.provider_runs} == {None, "HND"}
+    stopover_run = next(run for run in result.provider_runs if run.variant.stopover == "HND")
+    assert [segment.origin for segment in stopover_run.variant.request.segments] == ["PVG", "HND"]
+    assert [segment.destination for segment in stopover_run.variant.request.segments] == ["HND", "LAX"]
+
+
+def test_orchestrator_skips_multi_city_when_provider_lacks_capability() -> None:
+    request = SearchRequest.from_mapping(
+        {
+            "origin": "PVG",
+            "destination": "LAX",
+            "departure_date": "2026-10-01",
+            "stopovers": "HND",
+        }
+    )
+
+    result = __import__("asyncio").run(SearchOrchestrator([StaticProvider(())]).search(request))
+
+    skipped = [run for run in result.provider_runs if run.status == "skipped"]
+    assert len(skipped) == 1
+    assert skipped[0].variant.stopover == "HND"
+    assert skipped[0].to_dict()["variant"]["stopover"] == "HND"

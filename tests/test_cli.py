@@ -1,9 +1,16 @@
 from pathlib import Path
 
-from reverse_flight_tickets.cli import _excluded_carriers, _format_table, _request_from_values
+from reverse_flight_tickets.cli import (
+    _excluded_carriers,
+    _format_table,
+    _request_from_values,
+    _run_watchlist,
+)
 from reverse_flight_tickets.config import AppConfig
 from reverse_flight_tickets.domain import Layover, Offer, SearchRequest, Segment, TicketingType
+from reverse_flight_tickets.monitoring import WatchlistItem
 from reverse_flight_tickets.search import SearchRunResult
+from reverse_flight_tickets.storage import SqliteWatchlistRepository
 
 
 def test_cli_request_merges_json_and_overrides(tmp_path: Path) -> None:
@@ -33,6 +40,7 @@ def test_cli_request_merges_json_and_overrides(tmp_path: Path) -> None:
         cabin="business",
         markets=None,
         currencies=None,
+        stopover=(),
         max_layover_hours=None,
         include_split_ticket=False,
         include_self_transfer=False,
@@ -42,6 +50,29 @@ def test_cli_request_merges_json_and_overrides(tmp_path: Path) -> None:
     assert request.destination == "SFO"
     assert request.passengers.adults == 2
     assert request.cabin == "business"
+
+
+def test_cli_request_accepts_stopovers() -> None:
+    request = _request_from_values(
+        config=AppConfig(),
+        json_input=None,
+        origin="PVG",
+        destination="LAX",
+        departure_date="2026-10-01",
+        return_date=None,
+        date_flexibility_days=0,
+        passenger_count=None,
+        cabin=None,
+        markets=None,
+        currencies=None,
+        stopover=("hnd", "icn"),
+        max_layover_hours=None,
+        include_split_ticket=False,
+        include_self_transfer=False,
+        include_hidden_city=False,
+    )
+
+    assert request.stopovers == ("HND", "ICN")
 
 
 def test_table_output_includes_airline_and_flight_columns() -> None:
@@ -105,3 +136,29 @@ def test_cli_adds_custom_excluded_carriers() -> None:
         "ZZ",
         "BA",
     )
+
+
+def test_run_watchlist_persists_snapshot(tmp_path: Path) -> None:
+    request = SearchRequest.from_mapping(
+        {
+            "origin": "PVG",
+            "destination": "LAX",
+            "departure_date": "2026-10-01",
+        }
+    )
+    db_url = f"sqlite:///{tmp_path / 'watchlist.sqlite3'}"
+    repository = SqliteWatchlistRepository(db_url)
+    item_id = repository.add(
+        WatchlistItem(
+            request=request,
+            provider_names=("skyscanner",),
+        )
+    )
+
+    results = __import__("asyncio").run(
+        _run_watchlist(item_id=item_id, provider=(), include_research=False, db_url=db_url)
+    )
+
+    assert results[0]["item_id"] == item_id
+    assert results[0]["offer_count"] == 1
+    assert results[0]["snapshot_id"]

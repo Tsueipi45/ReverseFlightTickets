@@ -128,6 +128,7 @@ class SearchRequest(BaseModel):
     cabin: Cabin = "economy"
     allowed_markets: tuple[str, ...] = ("US",)
     allowed_currencies: tuple[str, ...] = ("USD",)
+    stopovers: tuple[str, ...] = ()
     date_flexibility_days: int = 0
     max_layover_hours: int | None = None
     include_split_ticket: bool = False
@@ -149,12 +150,18 @@ class SearchRequest(BaseModel):
     def _normalize_tuple(cls, value: Any) -> tuple[str, ...]:
         return _csv_tuple(value, ())
 
+    @field_validator("stopovers", mode="before")
+    @classmethod
+    def _normalize_stopovers(cls, value: Any) -> tuple[str, ...]:
+        return _csv_tuple(value, ())
+
     @model_validator(mode="after")
     def _set_defaults_and_validate(self) -> Self:
         allowed_markets = tuple(market.upper() for market in self.allowed_markets if market)
         allowed_currencies = tuple(
             currency.upper() for currency in self.allowed_currencies if currency
         )
+        stopovers = tuple(_code(stopover, "stopover") for stopover in self.stopovers if stopover)
         segments = self.segments
         if not self.segments:
             default_segments = [
@@ -183,6 +190,7 @@ class SearchRequest(BaseModel):
             raise ValueError("date_flexibility_days cannot be negative")
         object.__setattr__(self, "allowed_markets", allowed_markets)
         object.__setattr__(self, "allowed_currencies", allowed_currencies)
+        object.__setattr__(self, "stopovers", stopovers)
         object.__setattr__(self, "segments", segments)
         return self
 
@@ -220,6 +228,7 @@ class SearchRequest(BaseModel):
             cabin=_parse_cabin(data.get("cabin", "economy")),
             allowed_markets=_csv_tuple(data.get("allowed_markets"), default_markets),
             allowed_currencies=_csv_tuple(data.get("allowed_currencies"), default_currencies),
+            stopovers=_csv_tuple(data.get("stopovers"), ()),
             date_flexibility_days=int(data.get("date_flexibility_days") or 0),
             max_layover_hours=(
                 None
@@ -267,6 +276,7 @@ class SearchRequest(BaseModel):
             "cabin": self.cabin,
             "allowed_markets": list(self.allowed_markets),
             "allowed_currencies": list(self.allowed_currencies),
+            "stopovers": list(self.stopovers),
             "date_flexibility_days": self.date_flexibility_days,
             "max_layover_hours": self.max_layover_hours,
             "include_split_ticket": self.include_split_ticket,
