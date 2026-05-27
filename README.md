@@ -10,9 +10,14 @@ ReverseFlightTickets 是一个用于反向票查询与订购流程辅助的 Pyth
 
 - 反向票信息查询
 - 查询条件配置与结果筛选
+- 航司、GDS/NDC 聚合商与第三方 OTA 价格聚合
 - 订购流程辅助
 - 订单状态记录与追踪
 - 日志输出与异常处理
+
+## 实施方案
+
+项目任务单、架构设计树、数据源接入优先级和风控边界见 [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md)。
 
 ## 环境要求
 
@@ -53,6 +58,8 @@ pip install -r requirements.txt
 
 ```text
 ReverseFlightTickets/
+├── docs/
+│   └── IMPLEMENTATION_PLAN.md
 ├── README.md
 └── requirements.txt
 ```
