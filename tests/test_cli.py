@@ -4,6 +4,7 @@ from reverse_flight_tickets.cli import (
     _excluded_carriers,
     _format_table,
     _request_from_values,
+    _schedule_watchlist,
     _run_watchlist,
 )
 from reverse_flight_tickets.config import AppConfig
@@ -162,3 +163,32 @@ def test_run_watchlist_persists_snapshot(tmp_path: Path) -> None:
     assert results[0]["item_id"] == item_id
     assert results[0]["offer_count"] == 1
     assert results[0]["snapshot_id"]
+
+
+def test_schedule_watchlist_runs_limited_iterations(tmp_path: Path) -> None:
+    request = SearchRequest.from_mapping(
+        {
+            "origin": "PVG",
+            "destination": "LAX",
+            "departure_date": "2026-10-01",
+        }
+    )
+    db_url = f"sqlite:///{tmp_path / 'schedule.sqlite3'}"
+    SqliteWatchlistRepository(db_url).add(
+        WatchlistItem(
+            request=request,
+            provider_names=("skyscanner",),
+        )
+    )
+
+    summaries = __import__("asyncio").run(
+        _schedule_watchlist(
+            interval_seconds=1,
+            iterations=1,
+            provider=(),
+            include_research=False,
+            db_url=db_url,
+        )
+    )
+
+    assert summaries == [{"item_count": 1, "alert_count": 0, "snapshot_count": 1}]

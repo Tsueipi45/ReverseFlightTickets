@@ -34,3 +34,15 @@ class FeeBreakdown(BaseModel):
             + self.payment_fee_amount
             + self.baggage_fee_amount
         )
+
+
+def estimate_fee_breakdown(
+    base_amount: Decimal,
+    *,
+    payment_fee_rate: Decimal = Decimal("0"),
+    baggage_fee_amount: Decimal = Decimal("0"),
+) -> FeeBreakdown:
+    return FeeBreakdown(
+        payment_fee_amount=(base_amount * payment_fee_rate).quantize(Decimal("0.01")),
+        baggage_fee_amount=baggage_fee_amount,
+    )

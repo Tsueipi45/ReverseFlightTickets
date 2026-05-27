@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import Sequence
 
 from reverse_flight_tickets.domain import Offer, RiskFlag, SearchRequest, Segment, TicketingType
@@ -175,3 +176,31 @@ def test_orchestrator_skips_multi_city_when_provider_lacks_capability() -> None:
     assert len(skipped) == 1
     assert skipped[0].variant.stopover == "HND"
     assert skipped[0].to_dict()["variant"]["stopover"] == "HND"
+
+
+def test_orchestrator_applies_comparable_pricing_before_ranking() -> None:
+    request = SearchRequest.from_mapping(
+        {
+            "origin": "PVG",
+            "destination": "LAX",
+            "departure_date": "2026-10-01",
+            "allowed_currencies": "CNY",
+        }
+    )
+    offer = Offer(
+        provider="mock",
+        source_market="US",
+        currency="USD",
+        total_amount="100.00",
+    )
+
+    result = __import__("asyncio").run(
+        SearchOrchestrator(
+            [StaticProvider((offer,))],
+            exchange_rates={("USD", "CNY"): Decimal("7.20")},
+            payment_fee_rate=Decimal("0.02"),
+        ).search(request)
+    )
+
+    assert result.offers[0].currency == "CNY"
+    assert result.offers[0].comparable_amount == Decimal("734.40")

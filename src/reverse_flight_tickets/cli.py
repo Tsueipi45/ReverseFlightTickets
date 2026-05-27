@@ -6,7 +6,7 @@ import asyncio
 import json
 from pathlib import Path
 from decimal import Decimal
-from typing import Annotated, Any, Sequence
+from typing import Annotated, Any, Sequence, TypedDict
 
 import typer
 
@@ -58,6 +58,15 @@ PROVIDER_FACTORIES = {
 DEFAULT_PROVIDER_NAMES = ("skyscanner", "trip", "fliggy")
 RESEARCH_PROVIDER_NAMES = ("google_flights_research", "kiwi_research")
 DEFAULT_EXCLUDED_CARRIERS = ("ZZ",)
+
+
+class WatchlistRunRecord(TypedDict):
+    item_id: str
+    snapshot_id: str
+    offer_count: int
+    alerts: list[dict[str, str]]
+    trend: dict[str, object]
+    warnings: list[str]
 
 
 @app.callback()
@@ -339,6 +348,53 @@ def watchlist_run(
     typer.echo(_format_rows(rows))
 
 
+@watchlist_app.command("schedule")
+def watchlist_schedule(
+    interval_seconds: Annotated[
+        int,
+        typer.Option("--interval-seconds", min=1, help="Seconds between watchlist runs."),
+    ] = 3600,
+    iterations: Annotated[
+        int | None,
+        typer.Option(
+            "--iterations",
+            min=1,
+            help="Number of runs before exiting. Omit to run until interrupted.",
+        ),
+    ] = None,
+    item_id: Annotated[
+        str | None,
+        typer.Option("--item-id", help="Run a single watchlist item by id"),
+    ] = None,
+    provider: Annotated[
+        list[str] | None,
+        typer.Option("--provider", help="Override providers for each run; repeatable."),
+    ] = None,
+    include_research: Annotated[bool, typer.Option("--include-research")] = False,
+    db_url: Annotated[
+        str | None,
+        typer.Option("--db-url", help="SQLAlchemy database URL for watchlists and snapshots"),
+    ] = None,
+) -> None:
+    """Run watchlist checks on a simple local interval."""
+
+    summaries = asyncio.run(
+        _schedule_watchlist(
+            interval_seconds=interval_seconds,
+            iterations=iterations,
+            item_id=item_id,
+            provider=tuple(provider or ()),
+            include_research=include_research,
+            db_url=db_url,
+        )
+    )
+    for index, summary in enumerate(summaries, start=1):
+        typer.echo(
+            f"run {index}: {summary['item_count']} item(s), "
+            f"{summary['alert_count']} alert(s), {summary['snapshot_count']} snapshot(s)"
+        )
+
+
 async def _run_search(
     *,
     json_input: Path | None = None,
@@ -394,6 +450,9 @@ async def _run_search(
             exclude_carrier=exclude_carrier,
             include_test_carriers=include_test_carriers,
         ),
+        exchange_rates=dict(config.exchange_rates),
+        payment_fee_rate=config.payment_fee_rate,
+        baggage_fee_amount=config.baggage_fee_amount,
     )
     result = await orchestrator.search(request, context)
     if save_snapshot:
@@ -409,7 +468,7 @@ async def _run_watchlist(
     provider: tuple[str, ...] = (),
     include_research: bool = False,
     db_url: str | None = None,
-) -> list[dict[str, object]]:
+) -> list[WatchlistRunRecord]:
     config = AppConfig.from_env()
     database_url = db_url or config.database_url
     watchlist_repository = SqliteWatchlistRepository(database_url)
@@ -422,7 +481,7 @@ async def _run_watchlist(
         credentials=config.provider_secret_map(),
         timeout_seconds=config.provider_timeout_seconds,
     )
-    results: list[dict[str, object]] = []
+    results: list[WatchlistRunRecord] = []
     for item in items:
         provider_names = provider or item.provider_names
         providers = _providers_from_names(provider_names, include_research=include_research)
@@ -430,6 +489,9 @@ async def _run_watchlist(
             providers,
             timeout_seconds=config.provider_timeout_seconds,
             excluded_carriers=DEFAULT_EXCLUDED_CARRIERS,
+            exchange_rates=dict(config.exchange_rates),
+            payment_fee_rate=config.payment_fee_rate,
+            baggage_fee_amount=config.baggage_fee_amount,
         )
         search_result = await orchestrator.search(item.request, context)
         snapshot = SearchSnapshot.from_search_result(search_result)
@@ -449,6 +511,38 @@ async def _run_watchlist(
             }
         )
     return results
+
+
+async def _schedule_watchlist(
+    *,
+    interval_seconds: int,
+    iterations: int | None = None,
+    item_id: str | None = None,
+    provider: tuple[str, ...] = (),
+    include_research: bool = False,
+    db_url: str | None = None,
+) -> list[dict[str, int]]:
+    summaries: list[dict[str, int]] = []
+    run_count = 0
+    while iterations is None or run_count < iterations:
+        results = await _run_watchlist(
+            item_id=item_id,
+            provider=provider,
+            include_research=include_research,
+            db_url=db_url,
+        )
+        summaries.append(
+            {
+                "item_count": len(results),
+                "alert_count": sum(len(result["alerts"]) for result in results),
+                "snapshot_count": sum(1 for result in results if result.get("snapshot_id")),
+            }
+        )
+        run_count += 1
+        if iterations is not None and run_count >= iterations:
+            break
+        await asyncio.sleep(interval_seconds)
+    return summaries
 
 
 def _watchlist_alerts(

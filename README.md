@@ -12,8 +12,10 @@ ReverseFlightTickets 是一个用于反向票查询与订购流程辅助的 Pyth
 - 官方/API provider：已支持 Duffel sandbox 和 Amadeus Self-Service test API。
 - 人工核验 deep link：已支持 Skyscanner、Trip.com、飞猪、Google Flights research、Kiwi research。
 - 搜索扩展：支持销售地/币种组合、可配置日期弹性窗口和 stopover multi-city 候选。
+- 价格归一化：支持静态汇率表、支付费和行李费估算，并在排序前计算可比价。
 - 风险标记：支持人工核验、provider 未验证、split-ticket、自转机、hidden-city 默认排除等标签。
-- 快照与追踪：支持 SQLite 搜索快照、SQLite watchlist、一次性 watchlist run、降价阈值告警和趋势摘要。
+- 快照与追踪：支持 SQLite 搜索快照、SQLite watchlist、一次性 watchlist run、简单定时循环、降价阈值告警和趋势摘要。
+- 合规基础：内置 provider terms registry 和内存 audit log，用于记录 provider 查询访问方式。
 - 订购辅助：支持 booking handoff、购买前检查清单、人工确认订单记录、订单状态和票号字段。
 
 ## 实施方案
@@ -207,6 +209,12 @@ rft watchlist list
 rft watchlist run
 ```
 
+按固定间隔执行 watchlist；下面示例只跑 3 次：
+
+```bash
+rft watchlist schedule --interval-seconds 3600 --iterations 3
+```
+
 ## 项目结构
 
 ```text
@@ -258,6 +266,12 @@ GitHub Actions 会在 push 和 pull request 上运行同样的 lint、typecheck 
 - `FLIGGY_APP_SECRET`
 
 `DUFFEL_API_TOKEN` 已可用于本地 Duffel sandbox 查询；`AMADEUS_CLIENT_ID` 和 `AMADEUS_CLIENT_SECRET` 已可用于 Amadeus Self-Service test API 查询。`.env` 不会进入版本库。
+
+可选运行配置：
+
+- `RFT_EXCHANGE_RATES`：静态汇率表，例如 `USD:CNY=7.20,CNY:USD=0.14`。
+- `RFT_PAYMENT_FEE_RATE`：支付手续费率，例如 `0.03`。
+- `RFT_BAGGAGE_FEE_AMOUNT`：每个报价统一加上的行李费估算金额。
 
 ## License
 

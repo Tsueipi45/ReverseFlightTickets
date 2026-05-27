@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from decimal import Decimal
 from pathlib import Path
 from typing import Mapping
 
@@ -14,6 +15,22 @@ def _csv_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
     if raw is None or raw.strip() == "":
         return default
     return tuple(part.strip().upper() for part in raw.split(",") if part.strip())
+
+
+def _rate_env(name: str) -> dict[tuple[str, str], Decimal]:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return {}
+    rates: dict[tuple[str, str], Decimal] = {}
+    for part in raw.split(","):
+        if not part.strip() or "=" not in part:
+            continue
+        pair, value = part.split("=", 1)
+        if ":" not in pair:
+            continue
+        source, target = pair.split(":", 1)
+        rates[(source.strip().upper(), target.strip().upper())] = Decimal(value.strip())
+    return rates
 
 
 def load_dotenv(path: Path = Path(".env")) -> None:
@@ -56,6 +73,9 @@ class AppConfig(BaseModel):
     default_currencies: tuple[str, ...] = ("USD",)
     provider_timeout_seconds: float = 20.0
     database_url: str = "sqlite:///data/reverse_flight_tickets.sqlite3"
+    exchange_rates: Mapping[tuple[str, str], Decimal] = Field(default_factory=dict)
+    payment_fee_rate: Decimal = Decimal("0")
+    baggage_fee_amount: Decimal = Decimal("0")
     credentials: Mapping[str, ProviderCredential] = Field(default_factory=dict)
 
     @classmethod
@@ -93,6 +113,9 @@ class AppConfig(BaseModel):
                 "RFT_DATABASE_URL",
                 "sqlite:///data/reverse_flight_tickets.sqlite3",
             ),
+            exchange_rates=_rate_env("RFT_EXCHANGE_RATES"),
+            payment_fee_rate=Decimal(os.getenv("RFT_PAYMENT_FEE_RATE", "0")),
+            baggage_fee_amount=Decimal(os.getenv("RFT_BAGGAGE_FEE_AMOUNT", "0")),
             credentials=credentials,
         )
 

@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+from decimal import Decimal
 from typing import Iterable
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from reverse_flight_tickets.compliance import (
+    AuditEvent,
+    InMemoryAuditLog,
+    ProviderTermsRegistry,
+    default_terms_registry,
+)
 from reverse_flight_tickets.domain import Offer, SearchRequest
+from reverse_flight_tickets.pricing import StaticRateConverter
+from reverse_flight_tickets.pricing.normalize import apply_comparable_pricing
 from reverse_flight_tickets.providers.base import FlightProvider, ProviderContext
 from reverse_flight_tickets.search.expansion import SearchVariant, expand_request
 from reverse_flight_tickets.search.filters import (
@@ -90,10 +99,20 @@ class SearchOrchestrator:
         *,
         timeout_seconds: float = 20.0,
         excluded_carriers: Iterable[str] = (),
+        exchange_rates: dict[tuple[str, str], Decimal] | None = None,
+        payment_fee_rate: Decimal = Decimal("0"),
+        baggage_fee_amount: Decimal = Decimal("0"),
+        terms_registry: ProviderTermsRegistry | None = None,
+        audit_log: InMemoryAuditLog | None = None,
     ) -> None:
         self.providers = tuple(providers)
         self.timeout_seconds = timeout_seconds
         self.excluded_carriers = normalize_carrier_codes(excluded_carriers)
+        self.exchange_rates = exchange_rates or {}
+        self.payment_fee_rate = payment_fee_rate
+        self.baggage_fee_amount = baggage_fee_amount
+        self.terms_registry = terms_registry or default_terms_registry()
+        self.audit_log = audit_log
 
     async def search(
         self,
@@ -109,7 +128,14 @@ class SearchOrchestrator:
         provider_runs = tuple(await asyncio.gather(*tasks)) if tasks else ()
         raw_offers = [offer for run in provider_runs for offer in run.offers]
         normalized = normalize_offers(request, raw_offers)
-        policy_applied = apply_strategy_policy(request, normalized)
+        priced = apply_comparable_pricing(
+            normalized,
+            target_currency=request.allowed_currencies[0],
+            converter=StaticRateConverter(rates=self.exchange_rates),
+            payment_fee_rate=self.payment_fee_rate,
+            baggage_fee_amount=self.baggage_fee_amount,
+        )
+        policy_applied = apply_strategy_policy(request, priced)
         deduped = self._deduplicate(policy_applied)
         filtered = filter_offers_by_carrier(deduped, self.excluded_carriers)
         ranked = rank_offers(filtered.offers)
@@ -128,7 +154,9 @@ class SearchOrchestrator:
         variant: SearchVariant,
         context: ProviderContext | None,
     ) -> ProviderRun:
+        self._record_provider_audit(provider.name, variant, "started")
         if self._requires_multi_city(variant) and not provider.capabilities.supports_multi_city:
+            self._record_provider_audit(provider.name, variant, "skipped")
             return ProviderRun(
                 provider=provider.name,
                 status="skipped",
@@ -143,6 +171,7 @@ class SearchOrchestrator:
                 timeout=timeout,
             )
         except Exception as exc:  # Provider failures must not fail the whole search.
+            self._record_provider_audit(provider.name, variant, "error")
             return ProviderRun(
                 provider=provider.name,
                 status="error",
@@ -150,6 +179,7 @@ class SearchOrchestrator:
                 error=str(exc),
                 error_type=type(exc).__name__,
             )
+        self._record_provider_audit(provider.name, variant, "ok")
         return ProviderRun(
             provider=provider.name,
             status="ok",
@@ -166,6 +196,30 @@ class SearchOrchestrator:
 
     def _requires_multi_city(self, variant: SearchVariant) -> bool:
         return variant.stopover is not None or len(variant.request.segments) > 2
+
+    def _record_provider_audit(
+        self,
+        provider: str,
+        variant: SearchVariant,
+        status: str,
+    ) -> None:
+        if self.audit_log is None:
+            return
+        terms = self.terms_registry.get(provider)
+        self.audit_log.record(
+            AuditEvent(
+                event_type="provider_query",
+                provider=provider,
+                status=status,
+                metadata={
+                    "strategy": variant.strategy,
+                    "access_mode": terms.access_mode if terms else "unknown",
+                    "production_verified": (
+                        str(terms.production_verified).lower() if terms else "false"
+                    ),
+                },
+            )
+        )
 
     def _deduplicate(self, offers: tuple[Offer, ...]) -> tuple[Offer, ...]:
         seen: set[tuple[object, ...]] = set()
