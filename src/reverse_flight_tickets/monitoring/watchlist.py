@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from decimal import Decimal
 from uuid import uuid4
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from reverse_flight_tickets.domain import SearchRequest
 
 
-@dataclass(frozen=True)
-class WatchlistItem:
+class WatchlistItem(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     request: SearchRequest
     target_amount: Decimal | None = None
     target_currency: str | None = None
-    item_id: str = field(default_factory=lambda: str(uuid4()))
+    item_id: str = Field(default_factory=lambda: str(uuid4()))
 
     def to_dict(self) -> dict[str, object]:
         return {

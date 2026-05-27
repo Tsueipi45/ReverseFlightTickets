@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from pydantic import BaseModel, ConfigDict
 
 from reverse_flight_tickets.booking.checklist import build_pre_purchase_checklist
 from reverse_flight_tickets.domain import Offer
 
 
-@dataclass(frozen=True)
-class BookingHandoff:
+class BookingHandoff(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     provider: str
     booking_link: str | None
     manual_check_required: bool

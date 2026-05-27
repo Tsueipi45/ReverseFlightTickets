@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from pydantic import BaseModel, ConfigDict
 
 from reverse_flight_tickets.domain import SearchRequest
 
 
-@dataclass(frozen=True)
-class SearchVariant:
+class SearchVariant(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     request: SearchRequest
     strategy: str
     source_market: str
@@ -23,11 +24,7 @@ def expand_request(request: SearchRequest) -> tuple[SearchVariant, ...]:
         for currency in request.allowed_currencies:
             variants.append(
                 SearchVariant(
-                    request=replace(
-                        request,
-                        allowed_markets=(market,),
-                        allowed_currencies=(currency,),
-                    ),
+                    request=request.with_market_currency(market, currency),
                     strategy="market_currency",
                     source_market=market,
                     currency=currency,

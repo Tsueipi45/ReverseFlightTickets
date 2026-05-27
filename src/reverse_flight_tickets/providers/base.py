@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Mapping, Protocol, Sequence, runtime_checkable
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from reverse_flight_tickets.domain import Offer, ProviderQuote, RiskFlag, SearchRequest, TicketingType
 
 
-@dataclass(frozen=True)
-class ProviderCapability:
+class ProviderCapability(BaseModel):
     """Feature flags advertised by each connector."""
+
+    model_config = ConfigDict(frozen=True)
 
     supports_multi_city: bool = False
     supports_market: bool = False
@@ -22,13 +24,14 @@ class ProviderCapability:
     is_research: bool = False
 
 
-@dataclass(frozen=True)
-class ProviderContext:
+class ProviderContext(BaseModel):
     """Runtime material passed from orchestrator into provider connectors."""
 
-    credentials: Mapping[str, str] = field(default_factory=dict)
+    model_config = ConfigDict(frozen=True)
+
+    credentials: Mapping[str, str] = Field(default_factory=dict)
     timeout_seconds: float = 20.0
-    metadata: Mapping[str, str] = field(default_factory=dict)
+    metadata: Mapping[str, str] = Field(default_factory=dict)
 
 
 class ProviderError(RuntimeError):

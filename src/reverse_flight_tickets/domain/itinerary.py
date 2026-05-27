@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Literal, Mapping, cast
+from typing import Any, Literal, Mapping, Self, cast
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Cabin = Literal["economy", "premium_economy", "business", "first"]
 
@@ -45,9 +46,10 @@ def _parse_cabin(value: Any) -> Cabin:
     return cast(Cabin, cabin)
 
 
-@dataclass(frozen=True)
-class Segment:
+class Segment(BaseModel):
     """One requested or returned flight segment."""
+
+    model_config = ConfigDict(frozen=True)
 
     origin: str
     destination: str
@@ -57,21 +59,14 @@ class Segment:
     marketing_carrier: str | None = None
     flight_number: str | None = None
 
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "origin", _code(self.origin, "segment.origin"))
-        object.__setattr__(self, "destination", _code(self.destination, "segment.destination"))
+    @field_validator("origin", "destination", mode="before")
+    @classmethod
+    def _normalize_code(cls, value: Any) -> str:
+        return _code(str(value), "segment airport code")
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> "Segment":
-        return cls(
-            origin=str(data["origin"]),
-            destination=str(data["destination"]),
-            departure_date=_parse_date(data.get("departure_date"), "segment.departure_date"),
-            departure_time=data.get("departure_time"),
-            arrival_time=data.get("arrival_time"),
-            marketing_carrier=data.get("marketing_carrier"),
-            flight_number=data.get("flight_number"),
-        )
+        return cls.model_validate(data)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -85,19 +80,22 @@ class Segment:
         }
 
 
-@dataclass(frozen=True)
-class Passenger:
+class Passenger(BaseModel):
     """Passenger counts grouped by pricing category."""
+
+    model_config = ConfigDict(frozen=True)
 
     adults: int = 1
     children: int = 0
     infants: int = 0
 
-    def __post_init__(self) -> None:
+    @model_validator(mode="after")
+    def _validate_counts(self) -> Self:
         if self.adults < 1:
             raise ValueError("at least one adult passenger is required")
         if self.children < 0 or self.infants < 0:
             raise ValueError("child and infant passenger counts cannot be negative")
+        return self
 
     @property
     def total(self) -> int:
@@ -105,11 +103,7 @@ class Passenger:
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> "Passenger":
-        return cls(
-            adults=int(data.get("adults", 1)),
-            children=int(data.get("children", 0)),
-            infants=int(data.get("infants", 0)),
-        )
+        return cls.model_validate(data)
 
     def to_dict(self) -> dict[str, int]:
         return {
@@ -120,16 +114,17 @@ class Passenger:
         }
 
 
-@dataclass(frozen=True)
-class SearchRequest:
+class SearchRequest(BaseModel):
     """Canonical search input passed from interfaces to provider connectors."""
+
+    model_config = ConfigDict(frozen=True)
 
     origin: str
     destination: str
     departure_date: date
     return_date: date | None = None
     segments: tuple[Segment, ...] = ()
-    passengers: Passenger = field(default_factory=Passenger)
+    passengers: Passenger = Field(default_factory=Passenger)
     cabin: Cabin = "economy"
     allowed_markets: tuple[str, ...] = ("US",)
     allowed_currencies: tuple[str, ...] = ("USD",)
@@ -138,37 +133,46 @@ class SearchRequest:
     include_self_transfer: bool = False
     include_hidden_city: bool = False
 
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "origin", _code(self.origin, "origin"))
-        object.__setattr__(self, "destination", _code(self.destination, "destination"))
-        object.__setattr__(
-            self,
-            "allowed_markets",
-            tuple(market.upper() for market in self.allowed_markets if market),
+    @field_validator("origin", "destination", mode="before")
+    @classmethod
+    def _normalize_airport_code(cls, value: Any) -> str:
+        return _code(str(value), "airport code")
+
+    @field_validator("cabin", mode="before")
+    @classmethod
+    def _validate_cabin(cls, value: Any) -> Cabin:
+        return _parse_cabin(value)
+
+    @field_validator("allowed_markets", "allowed_currencies", mode="before")
+    @classmethod
+    def _normalize_tuple(cls, value: Any) -> tuple[str, ...]:
+        return _csv_tuple(value, ())
+
+    @model_validator(mode="after")
+    def _set_defaults_and_validate(self) -> Self:
+        allowed_markets = tuple(market.upper() for market in self.allowed_markets if market)
+        allowed_currencies = tuple(
+            currency.upper() for currency in self.allowed_currencies if currency
         )
-        object.__setattr__(
-            self,
-            "allowed_currencies",
-            tuple(currency.upper() for currency in self.allowed_currencies if currency),
-        )
+        segments = self.segments
         if not self.segments:
-            object.__setattr__(
-                self,
-                "segments",
-                (
-                    Segment(
-                        origin=self.origin,
-                        destination=self.destination,
-                        departure_date=self.departure_date,
-                    ),
+            segments = (
+                Segment(
+                    origin=self.origin,
+                    destination=self.destination,
+                    departure_date=self.departure_date,
                 ),
             )
         if self.cabin not in ("economy", "premium_economy", "business", "first"):
             raise ValueError(f"unsupported cabin: {self.cabin}")
-        if not self.allowed_markets:
+        if not allowed_markets:
             raise ValueError("at least one allowed market is required")
-        if not self.allowed_currencies:
+        if not allowed_currencies:
             raise ValueError("at least one allowed currency is required")
+        object.__setattr__(self, "allowed_markets", allowed_markets)
+        object.__setattr__(self, "allowed_currencies", allowed_currencies)
+        object.__setattr__(self, "segments", segments)
+        return self
 
     @classmethod
     def from_mapping(
@@ -212,6 +216,14 @@ class SearchRequest:
             include_split_ticket=bool(data.get("include_split_ticket", False)),
             include_self_transfer=bool(data.get("include_self_transfer", False)),
             include_hidden_city=bool(data.get("include_hidden_city", False)),
+        )
+
+    def with_market_currency(self, market: str, currency: str) -> "SearchRequest":
+        return self.model_copy(
+            update={
+                "allowed_markets": (market.upper(),),
+                "allowed_currencies": (currency.upper(),),
+            }
         )
 
     def to_dict(self) -> dict[str, Any]:

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Mapping, Protocol
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CurrencyConverter(Protocol):
@@ -12,11 +13,12 @@ class CurrencyConverter(Protocol):
         """Convert a monetary amount to another currency."""
 
 
-@dataclass(frozen=True)
-class StaticRateConverter:
+class StaticRateConverter(BaseModel):
     """Simple in-memory converter until an exchange-rate provider is added."""
 
-    rates: Mapping[tuple[str, str], Decimal] = field(default_factory=dict)
+    model_config = ConfigDict(frozen=True)
+
+    rates: Mapping[tuple[str, str], Decimal] = Field(default_factory=dict)
 
     def convert(self, amount: Decimal, from_currency: str, to_currency: str) -> Decimal:
         from_currency = from_currency.upper()

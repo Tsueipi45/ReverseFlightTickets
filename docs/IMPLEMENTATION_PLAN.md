@@ -108,14 +108,14 @@ ReverseFlightTickets
 ## 推荐技术栈
 
 - Python 3.11+
-- `httpx`：异步 HTTP 请求
-- `pydantic`：领域模型和 provider 响应校验
-- `typer`：CLI
+- `httpx`：异步 HTTP 请求（已加入依赖，真实 API provider 待接入）
+- `pydantic`：领域模型和 provider 响应校验（已用于核心模型）
+- `typer`：CLI（已用于 `rft search`）
 - `fastapi`：后续 REST API
-- `sqlalchemy` + SQLite/PostgreSQL：搜索和价格快照存储
+- `sqlalchemy` + SQLite/PostgreSQL：搜索和价格快照存储（已支持 SQLite 快照）
 - `apscheduler` 或 `celery`：价格追踪任务
-- `pytest` + `respx`：connector 单元测试和 HTTP mock
-- `ruff` + `mypy`：代码质量
+- `pytest` + `respx`：connector 单元测试和 HTTP mock（已加入依赖）
+- `ruff` + `mypy`：代码质量（已配置）
 
 ## 模块结构建议
 
@@ -250,35 +250,35 @@ RiskFlag
 
 ### Milestone 0：项目工程化
 
-- [ ] 建立 `pyproject.toml`，配置包名、Python 版本、依赖和脚本入口。
-- [ ] 建立 `src/reverse_flight_tickets` 包结构。
-- [ ] 配置 `ruff`、`mypy`、`pytest`。
-- [ ] 建立 `.env.example`，声明 provider token 变量。
+- [x] 建立 `pyproject.toml`，配置包名、Python 版本、依赖和脚本入口。
+- [x] 建立 `src/reverse_flight_tickets` 包结构。
+- [x] 配置 `ruff`、`mypy`、`pytest`。
+- [x] 建立 `.env.example`，声明 provider token 变量。
 - [ ] 增加基础 CI：lint、typecheck、test。
 
 ### Milestone 1：领域模型和 CLI
 
-- [ ] 定义 `SearchRequest`、`Segment`、`Offer`、`ProviderQuote`、`RiskFlag`。
-- [ ] 实现 `rft search` CLI。
-- [ ] 支持 JSON 输入和命令行参数输入。
-- [ ] 输出表格和 JSON 两种格式。
-- [ ] 增加模型序列化和校验测试。
+- [x] 定义 `SearchRequest`、`Segment`、`Offer`、`ProviderQuote`、`RiskFlag`。
+- [x] 实现 `rft search` CLI。
+- [x] 支持 JSON 输入和命令行参数输入。
+- [x] 输出表格和 JSON 两种格式。
+- [x] 增加模型序列化和校验测试。
 
 ### Milestone 2：Provider 抽象层
 
-- [ ] 定义 `FlightProvider` 协议：`search(request) -> list[Offer]`。
-- [ ] 定义 provider capability：是否支持 multi-city、market、currency、booking link、order。
-- [ ] 实现并发查询 orchestrator。
-- [ ] 实现 provider 超时、重试、限流和失败隔离。
-- [ ] 为 provider 响应建立 fixture 测试。
+- [x] 定义 `FlightProvider` 协议：`search(request) -> list[Offer]`。
+- [x] 定义 provider capability：是否支持 multi-city、market、currency、booking link、order。
+- [x] 实现并发查询 orchestrator。
+- [x] 实现 provider 超时和失败隔离；重试、限流待真实 API provider 接入时补充。
+- [x] 为 provider 响应建立 fixture 测试。
 
 ### Milestone 3：MVP 查价源
 
-- [ ] 接入 Duffel sandbox。
-- [ ] 接入 Amadeus test API。
-- [ ] 增加 Google Flights/Skyscanner/Trip.com/飞猪 deep-link 生成器。
-- [ ] 输出各来源原始价、统一价、查询时间和 provider 状态。
-- [ ] 对无 API 来源明确标记 `manual_check_required`。
+- [ ] 接入 Duffel sandbox（需要 `DUFFEL_API_TOKEN`，本轮留空）。
+- [ ] 接入 Amadeus test API（需要 `AMADEUS_CLIENT_ID/SECRET`，本轮留空）。
+- [x] 增加 Google Flights/Skyscanner/Trip.com/飞猪 deep-link 生成器。
+- [x] 输出各来源原始价、统一价、查询时间和 provider 状态。
+- [x] 对无 API 来源明确标记 `manual_check_required`。
 
 ### Milestone 4：反向票策略引擎
 

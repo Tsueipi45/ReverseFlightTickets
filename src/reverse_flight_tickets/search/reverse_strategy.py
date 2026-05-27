@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from pydantic import BaseModel, ConfigDict
 
 from reverse_flight_tickets.domain import Offer, RiskFlag, SearchRequest
 
 
-@dataclass(frozen=True)
-class StrategyPolicy:
+class StrategyPolicy(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     include_split_ticket: bool = False
     include_self_transfer: bool = False
     include_hidden_city: bool = False

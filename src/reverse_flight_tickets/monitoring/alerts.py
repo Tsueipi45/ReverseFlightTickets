@@ -2,18 +2,25 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from decimal import Decimal
+
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from reverse_flight_tickets.domain import Offer
 
 
-@dataclass(frozen=True)
-class PriceDropAlert:
+class PriceDropAlert(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     provider: str
     amount: Decimal
     currency: str
     threshold_amount: Decimal
+
+    @field_validator("amount", "threshold_amount", mode="before")
+    @classmethod
+    def _coerce_decimal(cls, value: object) -> Decimal:
+        return value if isinstance(value, Decimal) else Decimal(str(value))
 
     def to_dict(self) -> dict[str, str]:
         return {

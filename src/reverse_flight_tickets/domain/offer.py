@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any, Mapping
+from typing import Any, Mapping, Self
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from reverse_flight_tickets.domain.itinerary import Segment
 from reverse_flight_tickets.domain.risk import RiskFlag
@@ -26,12 +27,18 @@ class TicketingType(StrEnum):
     MANUAL_CHECK = "manual_check"
 
 
-@dataclass(frozen=True)
-class FareComponent:
+class FareComponent(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     base_amount: Decimal | None = None
     tax_amount: Decimal | None = None
     fee_amount: Decimal | None = None
     currency: str | None = None
+
+    @field_validator("base_amount", "tax_amount", "fee_amount", mode="before")
+    @classmethod
+    def _coerce_decimal(cls, value: Any) -> Decimal | None:
+        return _decimal_or_none(value)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -42,8 +49,9 @@ class FareComponent:
         }
 
 
-@dataclass(frozen=True)
-class BaggageRule:
+class BaggageRule(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     included_checked_bags: int | None = None
     included_carry_on_bags: int | None = None
     notes: str | None = None
@@ -56,13 +64,19 @@ class BaggageRule:
         }
 
 
-@dataclass(frozen=True)
-class ChangeRefundRule:
+class ChangeRefundRule(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     change_allowed: bool | None = None
     refund_allowed: bool | None = None
     penalty_amount: Decimal | None = None
     currency: str | None = None
     notes: str | None = None
+
+    @field_validator("penalty_amount", mode="before")
+    @classmethod
+    def _coerce_penalty(cls, value: Any) -> Decimal | None:
+        return _decimal_or_none(value)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -74,14 +88,15 @@ class ChangeRefundRule:
         }
 
 
-@dataclass(frozen=True)
-class ProviderQuote:
+class ProviderQuote(BaseModel):
     """Provider execution metadata kept beside normalized offers."""
+
+    model_config = ConfigDict(frozen=True)
 
     provider: str
     status: str
-    raw: Mapping[str, Any] = field(default_factory=dict)
-    requested_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    raw: Mapping[str, Any] = Field(default_factory=dict)
+    requested_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     latency_ms: int | None = None
     error: str | None = None
 
@@ -96,9 +111,10 @@ class ProviderQuote:
         }
 
 
-@dataclass(frozen=True)
-class Offer:
+class Offer(BaseModel):
     """Canonical provider output consumed by pricing, ranking, booking, and storage."""
+
+    model_config = ConfigDict(frozen=True)
 
     provider: str
     source_market: str
@@ -116,11 +132,21 @@ class Offer:
     provider_quote: ProviderQuote | None = None
     manual_check_required: bool = False
 
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "source_market", self.source_market.upper())
-        object.__setattr__(self, "currency", self.currency.upper())
-        object.__setattr__(self, "total_amount", _decimal_or_none(self.total_amount))
-        object.__setattr__(self, "comparable_amount", _decimal_or_none(self.comparable_amount))
+    @field_validator("source_market", "currency", mode="before")
+    @classmethod
+    def _uppercase(cls, value: Any) -> str:
+        return str(value).upper()
+
+    @field_validator("total_amount", "comparable_amount", mode="before")
+    @classmethod
+    def _coerce_amount(cls, value: Any) -> Decimal | None:
+        return _decimal_or_none(value)
+
+    @model_validator(mode="after")
+    def _sync_manual_flag(self) -> Self:
+        if RiskFlag.MANUAL_CHECK_REQUIRED in self.risk_flags and not self.manual_check_required:
+            object.__setattr__(self, "manual_check_required", True)
+        return self
 
     @property
     def display_amount(self) -> Decimal | None:

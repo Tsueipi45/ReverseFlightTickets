@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import os
 from typing import Mapping
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 def _csv_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
@@ -14,29 +15,32 @@ def _csv_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(part.strip().upper() for part in raw.split(",") if part.strip())
 
 
-@dataclass(frozen=True)
-class ProviderCredential:
+class ProviderCredential(BaseModel):
     """Credential material for a future API provider connector."""
+
+    model_config = ConfigDict(frozen=True)
 
     provider: str
     token: str | None = None
     client_id: str | None = None
     client_secret: str | None = None
-    extra: Mapping[str, str] = field(default_factory=dict)
+    extra: Mapping[str, str] = Field(default_factory=dict)
 
     @property
     def is_configured(self) -> bool:
         return any((self.token, self.client_id, self.client_secret, self.extra))
 
 
-@dataclass(frozen=True)
-class AppConfig:
+class AppConfig(BaseModel):
     """Runtime settings consumed by CLI, orchestrator, and providers."""
+
+    model_config = ConfigDict(frozen=True)
 
     default_markets: tuple[str, ...] = ("US",)
     default_currencies: tuple[str, ...] = ("USD",)
     provider_timeout_seconds: float = 20.0
-    credentials: Mapping[str, ProviderCredential] = field(default_factory=dict)
+    database_url: str = "sqlite:///data/reverse_flight_tickets.sqlite3"
+    credentials: Mapping[str, ProviderCredential] = Field(default_factory=dict)
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -68,6 +72,10 @@ class AppConfig:
             default_markets=_csv_env("RFT_DEFAULT_MARKETS", ("US",)),
             default_currencies=_csv_env("RFT_DEFAULT_CURRENCIES", ("USD",)),
             provider_timeout_seconds=float(os.getenv("RFT_PROVIDER_TIMEOUT_SECONDS", "20")),
+            database_url=os.getenv(
+                "RFT_DATABASE_URL",
+                "sqlite:///data/reverse_flight_tickets.sqlite3",
+            ),
             credentials=credentials,
         )
 
