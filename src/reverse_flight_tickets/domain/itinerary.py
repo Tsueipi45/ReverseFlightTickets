@@ -156,13 +156,22 @@ class SearchRequest(BaseModel):
         )
         segments = self.segments
         if not self.segments:
-            segments = (
+            default_segments = [
                 Segment(
                     origin=self.origin,
                     destination=self.destination,
                     departure_date=self.departure_date,
                 ),
-            )
+            ]
+            if self.return_date:
+                default_segments.append(
+                    Segment(
+                        origin=self.destination,
+                        destination=self.origin,
+                        departure_date=self.return_date,
+                    )
+                )
+            segments = tuple(default_segments)
         if self.cabin not in ("economy", "premium_economy", "business", "first"):
             raise ValueError(f"unsupported cabin: {self.cabin}")
         if not allowed_markets:

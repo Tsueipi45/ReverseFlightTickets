@@ -25,6 +25,7 @@ from reverse_flight_tickets.providers.research import (
     KiwiResearchProvider,
     LetsFGResearchProvider,
 )
+from reverse_flight_tickets.search.filters import normalize_carrier_codes
 from reverse_flight_tickets.search import SearchOrchestrator, SearchRunResult
 from reverse_flight_tickets.storage import SearchSnapshot, SqliteSearchRepository
 
@@ -43,6 +44,7 @@ PROVIDER_FACTORIES = {
 }
 DEFAULT_PROVIDER_NAMES = ("skyscanner", "trip", "fliggy")
 RESEARCH_PROVIDER_NAMES = ("google_flights_research", "kiwi_research")
+DEFAULT_EXCLUDED_CARRIERS = ("ZZ",)
 
 
 @app.callback()
@@ -91,6 +93,20 @@ def search(
         typer.Option("--provider", help="Provider to include; repeatable."),
     ] = None,
     include_research: Annotated[bool, typer.Option("--include-research")] = False,
+    exclude_carrier: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--exclude-carrier",
+            help="Carrier code to filter locally; repeatable. Duffel sandbox ZZ is excluded by default.",
+        ),
+    ] = None,
+    include_test_carriers: Annotated[
+        bool,
+        typer.Option(
+            "--include-test-carriers",
+            help="Show sandbox/test carriers such as Duffel Airways ZZ.",
+        ),
+    ] = False,
     output: Annotated[
         str,
         typer.Option("--output", help="Output format: table or json"),
@@ -120,6 +136,8 @@ def search(
             include_hidden_city=include_hidden_city,
             provider=tuple(provider or ()),
             include_research=include_research,
+            exclude_carrier=tuple(exclude_carrier or ()),
+            include_test_carriers=include_test_carriers,
             save_snapshot=save_snapshot,
             db_url=db_url,
         )
@@ -149,6 +167,8 @@ async def _run_search(
     include_hidden_city: bool = False,
     provider: tuple[str, ...] = (),
     include_research: bool = False,
+    exclude_carrier: tuple[str, ...] = (),
+    include_test_carriers: bool = False,
     save_snapshot: bool = False,
     db_url: str | None = None,
 ) -> SearchRunResult:
@@ -177,6 +197,10 @@ async def _run_search(
     orchestrator = SearchOrchestrator(
         providers,
         timeout_seconds=config.provider_timeout_seconds,
+        excluded_carriers=_excluded_carriers(
+            exclude_carrier=exclude_carrier,
+            include_test_carriers=include_test_carriers,
+        ),
     )
     result = await orchestrator.search(request, context)
     if save_snapshot:
@@ -184,6 +208,15 @@ async def _run_search(
         snapshot_id = repository.save_search_snapshot(SearchSnapshot.from_search_result(result))
         result = result.model_copy(update={"warnings": result.warnings + (f"snapshot saved: {snapshot_id}",)})
     return result
+
+
+def _excluded_carriers(
+    *,
+    exclude_carrier: tuple[str, ...],
+    include_test_carriers: bool,
+) -> tuple[str, ...]:
+    carriers = () if include_test_carriers else DEFAULT_EXCLUDED_CARRIERS
+    return normalize_carrier_codes(carriers + exclude_carrier)
 
 
 def _request_from_values(
@@ -266,6 +299,13 @@ def _format_table(result: SearchRunResult) -> str:
             "market",
             "currency",
             "amount",
+            "airlines",
+            "flights",
+            "depart",
+            "arrive",
+            "travel_time",
+            "transfers",
+            "layover_time",
             "ticketing",
             "risks",
             "booking_link",
@@ -273,6 +313,13 @@ def _format_table(result: SearchRunResult) -> str:
     ]
     for offer in result.offers:
         amount = str(offer.display_amount) if offer.display_amount is not None else "manual"
+        airlines = _format_airlines(offer)
+        flights = _format_flights(offer)
+        depart = _format_departure(offer)
+        arrive = _format_arrival(offer)
+        travel_time = _format_minutes(offer.travel_duration_minutes)
+        transfers = _format_transfers(offer)
+        layover_time = _format_layover_time(offer)
         risks = ",".join(flag.value for flag in offer.risk_flags) or "-"
         rows.append(
             (
@@ -280,6 +327,13 @@ def _format_table(result: SearchRunResult) -> str:
                 offer.source_market,
                 offer.currency,
                 amount,
+                airlines,
+                flights,
+                depart,
+                arrive,
+                travel_time,
+                transfers,
+                layover_time,
                 offer.ticketing_type.value,
                 risks,
                 offer.booking_link or "-",
@@ -298,6 +352,83 @@ def _format_table(result: SearchRunResult) -> str:
         lines.append("")
         lines.extend(f"Warning: {warning}" for warning in result.warnings)
     return "\n".join(lines)
+
+
+def _format_airlines(offer: object) -> str:
+    carriers: list[str] = []
+    for segment in getattr(offer, "segments", ()):
+        carrier = getattr(segment, "marketing_carrier", None)
+        if carrier and carrier not in carriers:
+            carriers.append(carrier)
+    return ",".join(carriers) if carriers else "-"
+
+
+def _format_flights(offer: object) -> str:
+    flights: list[str] = []
+    for segment in getattr(offer, "segments", ()):
+        carrier = getattr(segment, "marketing_carrier", None)
+        flight_number = getattr(segment, "flight_number", None)
+        if carrier and flight_number:
+            flights.append(f"{carrier}{flight_number}")
+        elif carrier:
+            flights.append(carrier)
+    return ",".join(flights) if flights else "-"
+
+
+def _format_departure(offer: object) -> str:
+    segments = tuple(getattr(offer, "segments", ()))
+    if not segments:
+        return "-"
+    first_segment = segments[0]
+    departure_time = getattr(first_segment, "departure_time", None)
+    if departure_time:
+        return str(departure_time)
+    departure_date = getattr(first_segment, "departure_date", None)
+    return str(departure_date) if departure_date else "-"
+
+
+def _format_arrival(offer: object) -> str:
+    segments = tuple(getattr(offer, "segments", ()))
+    if not segments:
+        return "-"
+    last_segment = segments[-1]
+    arrival_time = getattr(last_segment, "arrival_time", None)
+    if arrival_time:
+        return str(arrival_time)
+    arrival_date = getattr(last_segment, "departure_date", None)
+    return str(arrival_date) if arrival_date else "-"
+
+
+def _format_transfers(offer: object) -> str:
+    airports: list[str] = []
+    for layover in getattr(offer, "layovers", ()):
+        airport = getattr(layover, "airport", None)
+        if airport:
+            airports.append(airport)
+    return ",".join(airports) if airports else "-"
+
+
+def _format_layover_time(offer: object) -> str:
+    formatted: list[str] = []
+    for layover in getattr(offer, "layovers", ()):
+        airport = getattr(layover, "airport", None)
+        duration = getattr(layover, "duration_minutes", None)
+        if airport and duration is not None:
+            formatted.append(f"{airport} {_format_minutes(duration)}")
+        elif airport:
+            formatted.append(str(airport))
+    return ",".join(formatted) if formatted else "-"
+
+
+def _format_minutes(minutes: int | None) -> str:
+    if minutes is None:
+        return "-"
+    hours, remainder = divmod(minutes, 60)
+    if hours and remainder:
+        return f"{hours}h{remainder:02d}m"
+    if hours:
+        return f"{hours}h"
+    return f"{remainder}m"
 
 
 def main() -> None:

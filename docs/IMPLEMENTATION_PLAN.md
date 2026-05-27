@@ -129,7 +129,7 @@ src/reverse_flight_tickets/
 │   └── risk.py # 输入: 策略引擎/provider 标记的风险事实; 输出: RiskFlag 枚举供排序、展示、订购清单使用
 ├── providers/
 │   ├── base.py # 输入: SearchRequest + ProviderContext; 输出: list[Offer] 或 ProviderError; 定义 FlightProvider.search 接口和 ProviderCapability
-│   ├── duffel.py # 输入: SearchRequest + DUFFEL_API_TOKEN; 输出: Duffel API 报价归一化后的 Offer; 当前预留 API 接入边界
+│   ├── duffel.py # 输入: SearchRequest + DUFFEL_API_TOKEN; 输出: Duffel sandbox/API 报价归一化后的 Offer
 │   ├── amadeus.py # 输入: SearchRequest + AMADEUS_CLIENT_ID/SECRET; 输出: Amadeus 报价归一化后的 Offer; 当前预留 API 接入边界
 │   ├── skyscanner.py # 输入: SearchRequest; 输出: Skyscanner 人工核验 deep link Offer, 后续可替换官方 API 报价
 │   ├── trip.py # 输入: SearchRequest; 输出: Trip.com 人工核验 deep link Offer, 后续可替换 Partner API 报价
@@ -142,6 +142,7 @@ src/reverse_flight_tickets/
 │   ├── orchestrator.py # 输入: SearchRequest + providers; 输出: SearchRunResult(offers, provider_runs, warnings), 并发调用并隔离失败
 │   ├── expansion.py # 输入: SearchRequest; 输出: SearchVariant 列表, 扩展销售地/币种/后续 multi-city 候选
 │   ├── normalize.py # 输入: provider 返回的 Offer; 输出: 补齐默认航段和统一字段后的 Offer
+│   ├── filters.py # 输入: normalized Offer + 本地过滤条件; 输出: 排除测试航司/指定航司后的 Offer 与过滤告警
 │   ├── rank.py # 输入: normalized Offer; 输出: 按价格、风险、provider 排序后的 Offer
 │   └── reverse_strategy.py # 输入: SearchRequest + Offer 风险事实; 输出: StrategyPolicy、risk_score, 默认排除 hidden-city
 ├── pricing/
@@ -274,11 +275,12 @@ RiskFlag
 
 ### Milestone 3：MVP 查价源
 
-- [ ] 接入 Duffel sandbox（需要 `DUFFEL_API_TOKEN`，本轮留空）。
+- [x] 接入 Duffel sandbox（需要本地 `.env` 中的 `DUFFEL_API_TOKEN`）。
 - [ ] 接入 Amadeus test API（需要 `AMADEUS_CLIENT_ID/SECRET`，本轮留空）。
 - [x] 增加 Google Flights/Skyscanner/Trip.com/飞猪 deep-link 生成器。
 - [x] 输出各来源原始价、统一价、查询时间和 provider 状态。
 - [x] 对无 API 来源明确标记 `manual_check_required`。
+- [x] 本地过滤 Duffel sandbox 测试航司 `ZZ`，并支持 CLI 开关查看原始测试结果。
 
 ### Milestone 4：反向票策略引擎
 

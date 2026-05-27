@@ -72,7 +72,19 @@ rft search --origin PVG --destination LAX --departure-date 2026-10-01 --save-sna
 
 默认快照数据库为 `data/reverse_flight_tickets.sqlite3`，也可以用 `--db-url sqlite:///path/to/file.sqlite3` 覆盖。
 
-当前默认接入的是 Skyscanner、Trip.com、飞猪的人工核验 deep link provider，不抓取页面。Duffel、Amadeus 等 API provider 的接口边界已经预留，配置凭据后可按 `FlightProvider.search()` 协议继续实现；无凭据时会返回结构化错误，不会中断整个搜索。
+当前默认接入的是 Skyscanner、Trip.com、飞猪的人工核验 deep link provider，不抓取页面。Duffel sandbox provider 已支持真实查价；Amadeus 等其他 API provider 的接口边界已预留。无凭据时会返回结构化错误，不会中断整个搜索。
+
+Duffel sandbox 会返回测试航司 Duffel Airways，IATA 代码为 `ZZ`。CLI 默认在本地过滤 `ZZ` 航班，避免把 sandbox 测试航班当成真实候选；需要调试原始 Duffel sandbox 结果时，可加 `--include-test-carriers`。也可以用 `--exclude-carrier BA --exclude-carrier UA` 追加本地排除的航司代码。
+
+表格输出说明：
+
+- `airlines`：承运/营销航司代码。
+- `flights`：航司代码和航班号。
+- `depart` / `arrive`：首段起飞时间和末段到达时间；人工核验链接没有结构化航班时间时显示 `-`。
+- `travel_time`：总旅行时间，包含飞行和中转。
+- `transfers`：中转机场代码。
+- `layover_time`：各中转机场停留时间。
+- `risks`：风险标签，用于提示人工核验、sandbox/非生产来源、自转机、分开出票等注意事项；它不是程序错误。`provider_unverified` 表示结果来自 sandbox、人工核验或尚未完成生产资质验证的来源。
 
 ## 使用范例
 
@@ -133,6 +145,30 @@ rft search --origin PVG --destination LAX --departure-date 2026-10-01 --provider
 
 该命令在未配置 `DUFFEL_API_TOKEN` 时会返回 `ProviderNotConfigured`，但 CLI 不会崩溃。
 
+Duffel sandbox 查价：
+
+```bash
+rft search --origin LHR --destination JFK --departure-date 2026-10-01 --provider duffel
+```
+
+查看 Duffel sandbox 原始测试航司结果：
+
+```bash
+rft search --origin LHR --destination JFK --departure-date 2026-10-01 --provider duffel --include-test-carriers
+```
+
+往返 Duffel sandbox 查价：
+
+```bash
+rft search --origin LHR --destination JFK --departure-date 2026-10-01 --return-date 2026-10-15 --provider duffel --output json
+```
+
+本地排除指定航司：
+
+```bash
+rft search --origin LHR --destination JFK --departure-date 2026-10-01 --provider duffel --exclude-carrier BA
+```
+
 ## 项目结构
 
 ```text
@@ -168,15 +204,16 @@ ReverseFlightTickets/
 
 ## API 凭据
 
-本项目当前不会申请或填入真实 API 凭据。需要你后续手动处理的变量：
+本项目不会提交真实 API 凭据；请只在本地 `.env` 中填写。仍需要你后续手动处理的变量：
 
-- `DUFFEL_API_TOKEN`
 - `AMADEUS_CLIENT_ID`
 - `AMADEUS_CLIENT_SECRET`
 - `SKYSCANNER_API_KEY`
 - `TRIP_API_KEY`
 - `FLIGGY_APP_KEY`
 - `FLIGGY_APP_SECRET`
+
+`DUFFEL_API_TOKEN` 已可用于本地 Duffel sandbox 查询，但 `.env` 不会进入版本库。
 
 ## License
 

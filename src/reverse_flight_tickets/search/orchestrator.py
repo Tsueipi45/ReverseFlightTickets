@@ -10,6 +10,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from reverse_flight_tickets.domain import Offer, SearchRequest
 from reverse_flight_tickets.providers.base import FlightProvider, ProviderContext
 from reverse_flight_tickets.search.expansion import SearchVariant, expand_request
+from reverse_flight_tickets.search.filters import (
+    carrier_filter_warnings,
+    filter_offers_by_carrier,
+    normalize_carrier_codes,
+)
 from reverse_flight_tickets.search.normalize import normalize_offers
 from reverse_flight_tickets.search.rank import rank_offers
 from reverse_flight_tickets.search.reverse_strategy import risk_score
@@ -82,9 +87,11 @@ class SearchOrchestrator:
         providers: Iterable[FlightProvider],
         *,
         timeout_seconds: float = 20.0,
+        excluded_carriers: Iterable[str] = (),
     ) -> None:
         self.providers = tuple(providers)
         self.timeout_seconds = timeout_seconds
+        self.excluded_carriers = normalize_carrier_codes(excluded_carriers)
 
     async def search(
         self,
@@ -101,8 +108,9 @@ class SearchOrchestrator:
         raw_offers = [offer for run in provider_runs for offer in run.offers]
         normalized = normalize_offers(request, raw_offers)
         deduped = self._deduplicate(normalized)
-        ranked = rank_offers(deduped)
-        warnings = self._warnings(provider_runs)
+        filtered = filter_offers_by_carrier(deduped, self.excluded_carriers)
+        ranked = rank_offers(filtered.offers)
+        warnings = self._warnings(provider_runs) + carrier_filter_warnings(filtered)
         return SearchRunResult(
             request=request,
             offers=ranked,

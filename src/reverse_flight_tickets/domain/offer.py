@@ -88,6 +88,24 @@ class ChangeRefundRule(BaseModel):
         }
 
 
+class Layover(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    airport: str
+    duration_minutes: int | None = None
+
+    @field_validator("airport", mode="before")
+    @classmethod
+    def _uppercase_airport(cls, value: Any) -> str:
+        return str(value).upper()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "airport": self.airport,
+            "duration_minutes": self.duration_minutes,
+        }
+
+
 class ProviderQuote(BaseModel):
     """Provider execution metadata kept beside normalized offers."""
 
@@ -126,6 +144,8 @@ class Offer(BaseModel):
     fare_components: tuple[FareComponent, ...] = ()
     baggage: tuple[BaggageRule, ...] = ()
     fare_rules: tuple[ChangeRefundRule, ...] = ()
+    travel_duration_minutes: int | None = None
+    layovers: tuple[Layover, ...] = ()
     booking_link: str | None = None
     expires_at: datetime | None = None
     risk_flags: tuple[RiskFlag, ...] = ()
@@ -166,6 +186,8 @@ class Offer(BaseModel):
             "fare_components": [component.to_dict() for component in self.fare_components],
             "baggage": [rule.to_dict() for rule in self.baggage],
             "fare_rules": [rule.to_dict() for rule in self.fare_rules],
+            "travel_duration_minutes": self.travel_duration_minutes,
+            "layovers": [layover.to_dict() for layover in self.layovers],
             "booking_link": self.booking_link,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
             "risk_flags": [flag.value for flag in self.risk_flags],

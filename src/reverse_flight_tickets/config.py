@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Mapping
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -13,6 +14,21 @@ def _csv_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
     if raw is None or raw.strip() == "":
         return default
     return tuple(part.strip().upper() for part in raw.split(",") if part.strip())
+
+
+def load_dotenv(path: Path = Path(".env")) -> None:
+    """Load local .env values without overriding already exported environment variables."""
+
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        key = key.strip()
+        if key and key not in os.environ:
+            os.environ[key] = value.strip().strip('"').strip("'")
 
 
 class ProviderCredential(BaseModel):
@@ -44,6 +60,7 @@ class AppConfig(BaseModel):
 
     @classmethod
     def from_env(cls) -> "AppConfig":
+        load_dotenv()
         credentials = {
             "duffel": ProviderCredential(
                 provider="duffel",
