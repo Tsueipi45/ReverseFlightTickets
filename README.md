@@ -1,6 +1,6 @@
 # ReverseFlightTickets
 
-基于python的反向票查询订购工具。
+基于 Python 的反向票查询与订购辅助工具。
 
 ## 项目简介
 
@@ -8,16 +8,18 @@ ReverseFlightTickets 是一个用于反向票查询与订购流程辅助的 Pyth
 
 ## 功能规划
 
-- 反向票信息查询
-- 查询条件配置与结果筛选
-- 航司、GDS/NDC 聚合商与第三方 OTA 价格聚合
-- 订购流程辅助
-- 订单状态记录与追踪
-- 日志输出与异常处理
+- CLI 查价聚合：支持命令行参数和 JSON 请求输入。
+- 官方/API provider：已支持 Duffel sandbox 和 Amadeus Self-Service test API。
+- 人工核验 deep link：已支持 Skyscanner、Trip.com、飞猪、Google Flights research、Kiwi research。
+- 搜索扩展：支持销售地/币种组合和可配置日期弹性窗口。
+- 风险标记：支持人工核验、provider 未验证、split-ticket、自转机、hidden-city 默认排除等标签。
+- 快照与追踪：支持 SQLite 搜索快照、watchlist 模型和降价阈值告警。
+- 订购辅助：支持 booking handoff、购买前检查清单、人工确认订单记录、订单状态和票号字段。
 
 ## 实施方案
 
 项目任务单、架构设计树、数据源接入优先级和风控边界见 [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md)。
+当前完成状态快照见 [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md)。
 
 ## 环境要求
 
@@ -27,7 +29,7 @@ ReverseFlightTickets 是一个用于反向票查询与订购流程辅助的 Pyth
 ## 快速开始
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/Tsueipi45/ReverseFlightTickets.git
 cd ReverseFlightTickets
 python -m venv .venv
 ```
@@ -72,7 +74,7 @@ rft search --origin PVG --destination LAX --departure-date 2026-10-01 --save-sna
 
 默认快照数据库为 `data/reverse_flight_tickets.sqlite3`，也可以用 `--db-url sqlite:///path/to/file.sqlite3` 覆盖。
 
-当前默认接入的是 Skyscanner、Trip.com、飞猪的人工核验 deep link provider，不抓取页面。Duffel sandbox provider 已支持真实查价；Amadeus 等其他 API provider 的接口边界已预留。无凭据时会返回结构化错误，不会中断整个搜索。
+当前默认接入的是 Skyscanner、Trip.com、飞猪的人工核验 deep link provider，不抓取页面。Duffel sandbox provider 和 Amadeus Self-Service test API provider 已支持真实 API 查价。无凭据时会返回结构化错误，不会中断整个搜索。
 
 Duffel sandbox 会返回测试航司 Duffel Airways，IATA 代码为 `ZZ`。CLI 默认在本地过滤 `ZZ` 航班，避免把 sandbox 测试航班当成真实候选；需要调试原始 Duffel sandbox 结果时，可加 `--include-test-carriers`。也可以用 `--exclude-carrier BA --exclude-carrier UA` 追加本地排除的航司代码。
 
@@ -98,6 +100,12 @@ rft search --origin PVG --destination LAX --departure-date 2026-10-01
 
 ```bash
 rft search --origin PVG --destination LAX --departure-date 2026-10-01 --return-date 2026-10-15 --markets US,CN --currencies USD,CNY --output json
+```
+
+带日期弹性窗口查询：
+
+```bash
+rft search --origin PVG --destination LAX --departure-date 2026-10-01 --return-date 2026-10-15 --date-flexibility-days 2 --output json
 ```
 
 只查询指定 provider：
@@ -163,6 +171,12 @@ rft search --origin LHR --destination JFK --departure-date 2026-10-01 --provider
 rft search --origin LHR --destination JFK --departure-date 2026-10-01 --return-date 2026-10-15 --provider duffel --output json
 ```
 
+Amadeus Self-Service test API 查价：
+
+```bash
+rft search --origin PVG --destination LAX --departure-date 2026-10-01 --return-date 2026-10-15 --provider amadeus --output json
+```
+
 本地排除指定航司：
 
 ```bash
@@ -173,6 +187,9 @@ rft search --origin LHR --destination JFK --departure-date 2026-10-01 --provider
 
 ```text
 ReverseFlightTickets/
+├── .github/
+│   └── workflows/
+│       └── ci.yml
 ├── src/
 │   └── reverse_flight_tickets/
 │       ├── cli.py
@@ -187,6 +204,7 @@ ReverseFlightTickets/
 ├── tests/
 ├── docs/
 │   └── IMPLEMENTATION_PLAN.md
+│   └── PROJECT_STATUS.md
 ├── pyproject.toml
 ├── README.md
 └── requirements.txt
@@ -202,6 +220,8 @@ ReverseFlightTickets/
 .venv\Scripts\python.exe -m mypy src
 ```
 
+GitHub Actions 会在 push 和 pull request 上运行同样的 lint、typecheck 和 test。
+
 ## API 凭据
 
 本项目不会提交真实 API 凭据；请只在本地 `.env` 中填写。仍需要你后续手动处理的变量：
@@ -213,7 +233,7 @@ ReverseFlightTickets/
 - `FLIGGY_APP_KEY`
 - `FLIGGY_APP_SECRET`
 
-`DUFFEL_API_TOKEN` 已可用于本地 Duffel sandbox 查询，但 `.env` 不会进入版本库。
+`DUFFEL_API_TOKEN` 已可用于本地 Duffel sandbox 查询；`AMADEUS_CLIENT_ID` 和 `AMADEUS_CLIENT_SECRET` 已可用于 Amadeus Self-Service test API 查询。`.env` 不会进入版本库。
 
 ## License
 

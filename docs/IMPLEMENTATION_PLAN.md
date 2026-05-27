@@ -130,7 +130,7 @@ src/reverse_flight_tickets/
 ├── providers/
 │   ├── base.py # 输入: SearchRequest + ProviderContext; 输出: list[Offer] 或 ProviderError; 定义 FlightProvider.search 接口和 ProviderCapability
 │   ├── duffel.py # 输入: SearchRequest + DUFFEL_API_TOKEN; 输出: Duffel sandbox/API 报价归一化后的 Offer
-│   ├── amadeus.py # 输入: SearchRequest + AMADEUS_CLIENT_ID/SECRET; 输出: Amadeus 报价归一化后的 Offer; 当前预留 API 接入边界
+│   ├── amadeus.py # 输入: SearchRequest + AMADEUS_CLIENT_ID/SECRET; 输出: Amadeus Self-Service 报价归一化后的 Offer
 │   ├── skyscanner.py # 输入: SearchRequest; 输出: Skyscanner 人工核验 deep link Offer, 后续可替换官方 API 报价
 │   ├── trip.py # 输入: SearchRequest; 输出: Trip.com 人工核验 deep link Offer, 后续可替换 Partner API 报价
 │   ├── fliggy.py # 输入: SearchRequest; 输出: 飞猪人工核验 deep link Offer, 后续可替换开放平台/商务 API 报价
@@ -255,7 +255,7 @@ RiskFlag
 - [x] 建立 `src/reverse_flight_tickets` 包结构。
 - [x] 配置 `ruff`、`mypy`、`pytest`。
 - [x] 建立 `.env.example`，声明 provider token 变量。
-- [ ] 增加基础 CI：lint、typecheck、test。
+- [x] 增加基础 CI：lint、typecheck、test。
 
 ### Milestone 1：领域模型和 CLI
 
@@ -276,7 +276,7 @@ RiskFlag
 ### Milestone 3：MVP 查价源
 
 - [x] 接入 Duffel sandbox（需要本地 `.env` 中的 `DUFFEL_API_TOKEN`）。
-- [ ] 接入 Amadeus test API（需要 `AMADEUS_CLIENT_ID/SECRET`，本轮留空）。
+- [x] 接入 Amadeus test API（需要 `AMADEUS_CLIENT_ID/SECRET`）。
 - [x] 增加 Google Flights/Skyscanner/Trip.com/飞猪 deep-link 生成器。
 - [x] 输出各来源原始价、统一价、查询时间和 provider 状态。
 - [x] 对无 API 来源明确标记 `manual_check_required`。
@@ -284,11 +284,11 @@ RiskFlag
 
 ### Milestone 4：反向票策略引擎
 
-- [ ] 支持销售地/币种变体搜索。
+- [x] 支持销售地/币种变体搜索。
 - [ ] 支持 multi-city 候选生成。
-- [ ] 支持可配置日期弹性窗口。
-- [ ] 支持 split-ticket 检测和风险标记。
-- [ ] 默认排除 hidden-city；若未来支持，必须单独开关和强风险提示。
+- [x] 支持可配置日期弹性窗口。
+- [x] 支持 split-ticket 检测和风险标记。
+- [x] 默认排除 hidden-city；若未来支持，必须单独开关和强风险提示。
 - [ ] 生成“省钱金额 vs 风险”的排序结果。
 
 ### Milestone 5：价格归一化和排序
@@ -297,22 +297,22 @@ RiskFlag
 - [ ] 建立税费、服务费、支付手续费字段。
 - [ ] 建立行李费用估算模型。
 - [ ] 建立退改签风险权重。
-- [ ] 输出 `lowest_price`、`best_value`、`lowest_risk` 三类推荐。
+- [x] 输出 `lowest_price`、`best_value`、`lowest_risk` 三类推荐。
 
 ### Milestone 6：价格追踪
 
-- [ ] 存储查询快照。
-- [ ] 建立 watchlist。
+- [x] 存储查询快照。
+- [x] 建立 watchlist。
 - [ ] 支持定时重新查询。
-- [ ] 支持降价阈值告警。
+- [x] 支持降价阈值告警。
 - [ ] 生成价格趋势报告。
 
 ### Milestone 7：订购辅助
 
-- [ ] 生成 provider booking link。
-- [ ] 输出购买前检查清单：行李、退改签、是否分开出票、是否自转机、付款币种。
-- [ ] 支持人工确认后记录订单。
-- [ ] 支持订单状态和票号字段。
+- [x] 生成 provider booking link。
+- [x] 输出购买前检查清单：行李、退改签、是否分开出票、是否自转机、付款币种。
+- [x] 支持人工确认后记录订单。
+- [x] 支持订单状态和票号字段。
 - [ ] 在获得 API 权限后再实现自动下单。
 
 ### Milestone 8：平台化

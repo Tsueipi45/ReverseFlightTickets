@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Literal, Mapping, Self, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -128,6 +128,7 @@ class SearchRequest(BaseModel):
     cabin: Cabin = "economy"
     allowed_markets: tuple[str, ...] = ("US",)
     allowed_currencies: tuple[str, ...] = ("USD",)
+    date_flexibility_days: int = 0
     max_layover_hours: int | None = None
     include_split_ticket: bool = False
     include_self_transfer: bool = False
@@ -178,6 +179,8 @@ class SearchRequest(BaseModel):
             raise ValueError("at least one allowed market is required")
         if not allowed_currencies:
             raise ValueError("at least one allowed currency is required")
+        if self.date_flexibility_days < 0:
+            raise ValueError("date_flexibility_days cannot be negative")
         object.__setattr__(self, "allowed_markets", allowed_markets)
         object.__setattr__(self, "allowed_currencies", allowed_currencies)
         object.__setattr__(self, "segments", segments)
@@ -217,6 +220,7 @@ class SearchRequest(BaseModel):
             cabin=_parse_cabin(data.get("cabin", "economy")),
             allowed_markets=_csv_tuple(data.get("allowed_markets"), default_markets),
             allowed_currencies=_csv_tuple(data.get("allowed_currencies"), default_currencies),
+            date_flexibility_days=int(data.get("date_flexibility_days") or 0),
             max_layover_hours=(
                 None
                 if data.get("max_layover_hours") in (None, "")
@@ -235,6 +239,22 @@ class SearchRequest(BaseModel):
             }
         )
 
+    def with_date_shift(self, days: int) -> "SearchRequest":
+        if days == 0:
+            return self
+        offset = timedelta(days=days)
+        shifted_segments = tuple(
+            segment.model_copy(update={"departure_date": segment.departure_date + offset})
+            for segment in self.segments
+        )
+        return self.model_copy(
+            update={
+                "departure_date": self.departure_date + offset,
+                "return_date": self.return_date + offset if self.return_date else None,
+                "segments": shifted_segments,
+            }
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "origin": self.origin,
@@ -247,6 +267,7 @@ class SearchRequest(BaseModel):
             "cabin": self.cabin,
             "allowed_markets": list(self.allowed_markets),
             "allowed_currencies": list(self.allowed_currencies),
+            "date_flexibility_days": self.date_flexibility_days,
             "max_layover_hours": self.max_layover_hours,
             "include_split_ticket": self.include_split_ticket,
             "include_self_transfer": self.include_self_transfer,

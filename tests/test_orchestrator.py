@@ -1,6 +1,6 @@
 from typing import Sequence
 
-from reverse_flight_tickets.domain import Offer, SearchRequest, Segment
+from reverse_flight_tickets.domain import Offer, RiskFlag, SearchRequest, Segment, TicketingType
 from reverse_flight_tickets.providers import SkyscannerProvider
 from reverse_flight_tickets.providers.base import ProviderCapability, ProviderContext
 from reverse_flight_tickets.search import SearchOrchestrator
@@ -101,3 +101,30 @@ def test_orchestrator_filter_warning_mentions_carrier() -> None:
     )
 
     assert carrier_filter_warnings(result) == ("filtered 1 offer by excluded carrier: ZZ",)
+
+
+def test_orchestrator_expands_date_flexibility_and_labels_policy() -> None:
+    request = SearchRequest.from_mapping(
+        {
+            "origin": "PVG",
+            "destination": "LAX",
+            "departure_date": "2026-10-01",
+            "date_flexibility_days": 1,
+            "allowed_markets": "US",
+            "allowed_currencies": "USD",
+        }
+    )
+    offer = Offer(
+        provider="mock",
+        source_market="US",
+        currency="USD",
+        total_amount="100.00",
+        ticketing_type=TicketingType.SPLIT_TICKET,
+    )
+
+    result = __import__("asyncio").run(SearchOrchestrator([StaticProvider((offer,))]).search(request))
+
+    assert len(result.provider_runs) == 3
+    assert {run.variant.date_shift_days for run in result.provider_runs} == {-1, 0, 1}
+    assert RiskFlag.SPLIT_TICKET in result.offers[0].risk_flags
+    assert RiskFlag.HIDDEN_CITY_EXCLUDED in result.offers[0].risk_flags

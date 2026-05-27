@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
-from reverse_flight_tickets.domain import Offer, RiskFlag, SearchRequest
+from reverse_flight_tickets.domain import Offer, RiskFlag, SearchRequest, TicketingType
 
 
 class StrategyPolicy(BaseModel):
@@ -36,3 +36,27 @@ def risk_score(offer: Offer) -> int:
         RiskFlag.HIDDEN_CITY_EXCLUDED: 0,
     }
     return sum(weights.get(flag, 0) for flag in offer.risk_flags)
+
+
+def apply_strategy_policy(request: SearchRequest, offers: tuple[Offer, ...]) -> tuple[Offer, ...]:
+    """Apply local risk labeling and hidden-city exclusion policy."""
+
+    return tuple(_apply_offer_policy(request, offer) for offer in offers)
+
+
+def _apply_offer_policy(request: SearchRequest, offer: Offer) -> Offer:
+    flags = list(offer.risk_flags)
+
+    if offer.ticketing_type == TicketingType.SPLIT_TICKET and RiskFlag.SPLIT_TICKET not in flags:
+        flags.append(RiskFlag.SPLIT_TICKET)
+    if offer.ticketing_type == TicketingType.SELF_TRANSFER and RiskFlag.SELF_TRANSFER not in flags:
+        flags.append(RiskFlag.SELF_TRANSFER)
+
+    if not request.include_hidden_city and RiskFlag.HIDDEN_CITY_EXCLUDED not in flags:
+        flags.append(RiskFlag.HIDDEN_CITY_EXCLUDED)
+
+    return offer.model_copy(
+        update={
+            "risk_flags": tuple(flags),
+        }
+    )

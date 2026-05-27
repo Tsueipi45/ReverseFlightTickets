@@ -68,6 +68,14 @@ def search(
         str | None,
         typer.Option("--return-date", help="Return date, YYYY-MM-DD"),
     ] = None,
+    date_flexibility_days: Annotated[
+        int,
+        typer.Option(
+            "--date-flexibility-days",
+            min=0,
+            help="Search +/- N days around the requested departure/return dates.",
+        ),
+    ] = 0,
     passenger_count: Annotated[
         int | None,
         typer.Option("--passenger-count", help="Adult passenger count"),
@@ -126,6 +134,7 @@ def search(
             destination=destination,
             departure_date=departure_date,
             return_date=return_date,
+            date_flexibility_days=date_flexibility_days,
             passenger_count=passenger_count,
             cabin=cabin,
             markets=markets,
@@ -157,6 +166,7 @@ async def _run_search(
     destination: str | None = None,
     departure_date: str | None = None,
     return_date: str | None = None,
+    date_flexibility_days: int = 0,
     passenger_count: int | None = None,
     cabin: str | None = None,
     markets: str | None = None,
@@ -180,6 +190,7 @@ async def _run_search(
         destination=destination,
         departure_date=departure_date,
         return_date=return_date,
+        date_flexibility_days=date_flexibility_days,
         passenger_count=passenger_count,
         cabin=cabin,
         markets=markets,
@@ -215,7 +226,7 @@ def _excluded_carriers(
     exclude_carrier: tuple[str, ...],
     include_test_carriers: bool,
 ) -> tuple[str, ...]:
-    carriers = () if include_test_carriers else DEFAULT_EXCLUDED_CARRIERS
+    carriers: tuple[str, ...] = () if include_test_carriers else DEFAULT_EXCLUDED_CARRIERS
     return normalize_carrier_codes(carriers + exclude_carrier)
 
 
@@ -227,6 +238,7 @@ def _request_from_values(
     destination: str | None,
     departure_date: str | None,
     return_date: str | None,
+    date_flexibility_days: int,
     passenger_count: int | None,
     cabin: str | None,
     markets: str | None,
@@ -245,6 +257,7 @@ def _request_from_values(
         "destination": destination,
         "departure_date": departure_date,
         "return_date": return_date,
+        "date_flexibility_days": date_flexibility_days,
         "passenger_count": passenger_count,
         "cabin": cabin,
         "allowed_markets": markets,

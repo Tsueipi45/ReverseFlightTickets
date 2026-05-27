@@ -17,7 +17,7 @@ from reverse_flight_tickets.search.filters import (
 )
 from reverse_flight_tickets.search.normalize import normalize_offers
 from reverse_flight_tickets.search.rank import rank_offers
-from reverse_flight_tickets.search.reverse_strategy import risk_score
+from reverse_flight_tickets.search.reverse_strategy import apply_strategy_policy, risk_score
 
 
 class ProviderRun(BaseModel):
@@ -38,6 +38,7 @@ class ProviderRun(BaseModel):
                 "strategy": self.variant.strategy,
                 "source_market": self.variant.source_market,
                 "currency": self.variant.currency,
+                "date_shift_days": self.variant.date_shift_days,
             },
             "offer_count": len(self.offers),
             "error": self.error,
@@ -107,7 +108,8 @@ class SearchOrchestrator:
         provider_runs = tuple(await asyncio.gather(*tasks)) if tasks else ()
         raw_offers = [offer for run in provider_runs for offer in run.offers]
         normalized = normalize_offers(request, raw_offers)
-        deduped = self._deduplicate(normalized)
+        policy_applied = apply_strategy_policy(request, normalized)
+        deduped = self._deduplicate(policy_applied)
         filtered = filter_offers_by_carrier(deduped, self.excluded_carriers)
         ranked = rank_offers(filtered.offers)
         warnings = self._warnings(provider_runs) + carrier_filter_warnings(filtered)
@@ -184,7 +186,11 @@ class SearchOrchestrator:
     def _recommend(self, offers: tuple[Offer, ...]) -> SearchRecommendations:
         priced = tuple(offer for offer in offers if offer.display_amount is not None)
         lowest_price = priced[0] if priced else None
-        lowest_risk = min(offers, key=lambda offer: (risk_score(offer), offer.display_amount is None)) if offers else None
+        lowest_risk = (
+            min(offers, key=lambda offer: (risk_score(offer), offer.display_amount is None))
+            if offers
+            else None
+        )
         best_value = min(
             offers,
             key=lambda offer: (

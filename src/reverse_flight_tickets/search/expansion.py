@@ -14,20 +14,27 @@ class SearchVariant(BaseModel):
     strategy: str
     source_market: str
     currency: str
+    date_shift_days: int = 0
 
 
 def expand_request(request: SearchRequest) -> tuple[SearchVariant, ...]:
     """Create search variants while keeping hidden-city excluded by default."""
 
     variants: list[SearchVariant] = []
-    for market in request.allowed_markets:
-        for currency in request.allowed_currencies:
-            variants.append(
-                SearchVariant(
-                    request=request.with_market_currency(market, currency),
-                    strategy="market_currency",
-                    source_market=market,
-                    currency=currency,
+    for date_shift in range(-request.date_flexibility_days, request.date_flexibility_days + 1):
+        date_request = request.with_date_shift(date_shift)
+        for market in request.allowed_markets:
+            for currency in request.allowed_currencies:
+                strategy = "multi_city_market_currency" if len(request.segments) > 2 else "market_currency"
+                if date_shift:
+                    strategy = f"{strategy}_date_flex"
+                variants.append(
+                    SearchVariant(
+                        request=date_request.with_market_currency(market, currency),
+                        strategy=strategy,
+                        source_market=market,
+                        currency=currency,
+                        date_shift_days=date_shift,
+                    )
                 )
-            )
     return tuple(variants)

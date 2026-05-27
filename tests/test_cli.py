@@ -28,6 +28,7 @@ def test_cli_request_merges_json_and_overrides(tmp_path: Path) -> None:
         destination="SFO",
         departure_date=None,
         return_date=None,
+        date_flexibility_days=0,
         passenger_count=2,
         cabin="business",
         markets=None,

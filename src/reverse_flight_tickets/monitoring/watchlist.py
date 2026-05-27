@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Protocol
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -25,3 +26,29 @@ class WatchlistItem(BaseModel):
             "target_amount": str(self.target_amount) if self.target_amount is not None else None,
             "target_currency": self.target_currency,
         }
+
+
+class WatchlistRepository(Protocol):
+    def add(self, item: WatchlistItem) -> str:
+        """Store a watchlist item and return its id."""
+
+    def list(self) -> tuple[WatchlistItem, ...]:
+        """Return all watchlist items."""
+
+    def get(self, item_id: str) -> WatchlistItem | None:
+        """Return one watchlist item by id."""
+
+
+class InMemoryWatchlistRepository:
+    def __init__(self) -> None:
+        self._items: dict[str, WatchlistItem] = {}
+
+    def add(self, item: WatchlistItem) -> str:
+        self._items[item.item_id] = item
+        return item.item_id
+
+    def list(self) -> tuple[WatchlistItem, ...]:
+        return tuple(self._items.values())
+
+    def get(self, item_id: str) -> WatchlistItem | None:
+        return self._items.get(item_id)
