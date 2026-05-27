@@ -21,7 +21,7 @@ ReverseFlightTickets 是一个用于反向票查询与订购流程辅助的 Pyth
 
 ## 环境要求
 
-- Python 3.10 或更高版本
+- Python 3.11 或更高版本
 - Git
 
 ## 快速开始
@@ -47,19 +47,44 @@ source .venv/bin/activate
 安装依赖：
 
 ```bash
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ## 使用方式
 
-项目仍在初始化阶段，具体运行命令会在核心功能实现后补充。
+运行一次基础搜索：
+
+```bash
+rft search --origin PVG --destination LAX --departure-date 2026-10-01
+```
+
+输出 JSON：
+
+```bash
+rft search --origin PVG --destination LAX --departure-date 2026-10-01 --output json
+```
+
+当前默认接入的是 Skyscanner、Trip.com、飞猪的人工核验 deep link provider，不抓取页面。Duffel、Amadeus 等 API provider 的接口边界已经预留，配置凭据后可按 `FlightProvider.search()` 协议继续实现。
 
 ## 项目结构
 
 ```text
 ReverseFlightTickets/
+├── src/
+│   └── reverse_flight_tickets/
+│       ├── cli.py
+│       ├── config.py
+│       ├── domain/
+│       ├── providers/
+│       ├── search/
+│       ├── pricing/
+│       ├── booking/
+│       ├── storage/
+│       └── monitoring/
+├── tests/
 ├── docs/
 │   └── IMPLEMENTATION_PLAN.md
+├── pyproject.toml
 ├── README.md
 └── requirements.txt
 ```

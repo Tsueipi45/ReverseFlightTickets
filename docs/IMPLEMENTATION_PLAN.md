@@ -121,42 +121,42 @@ ReverseFlightTickets
 
 ```text
 src/reverse_flight_tickets/
-├── cli.py
-├── config.py
+├── cli.py # 输入: 命令行参数或 SearchRequest JSON; 输出: 表格/JSON 搜索结果, 将 SearchRequest 交给 SearchOrchestrator
+├── config.py # 输入: 环境变量/.env 中的默认市场、币种、provider token; 输出: AppConfig、ProviderContext credentials
 ├── domain/
-│   ├── itinerary.py
-│   ├── offer.py
-│   └── risk.py
+│   ├── itinerary.py # 输入: 用户行程、日期、乘客、舱位、市场/币种偏好; 输出: SearchRequest、Segment、Passenger
+│   ├── offer.py # 输入: provider 原始报价归一化字段; 输出: Offer、ProviderQuote、FareComponent、BaggageRule、ChangeRefundRule
+│   └── risk.py # 输入: 策略引擎/provider 标记的风险事实; 输出: RiskFlag 枚举供排序、展示、订购清单使用
 ├── providers/
-│   ├── base.py
-│   ├── duffel.py
-│   ├── amadeus.py
-│   ├── skyscanner.py
-│   ├── trip.py
-│   ├── fliggy.py
+│   ├── base.py # 输入: SearchRequest + ProviderContext; 输出: list[Offer] 或 ProviderError; 定义 FlightProvider.search 接口和 ProviderCapability
+│   ├── duffel.py # 输入: SearchRequest + DUFFEL_API_TOKEN; 输出: Duffel API 报价归一化后的 Offer; 当前预留 API 接入边界
+│   ├── amadeus.py # 输入: SearchRequest + AMADEUS_CLIENT_ID/SECRET; 输出: Amadeus 报价归一化后的 Offer; 当前预留 API 接入边界
+│   ├── skyscanner.py # 输入: SearchRequest; 输出: Skyscanner 人工核验 deep link Offer, 后续可替换官方 API 报价
+│   ├── trip.py # 输入: SearchRequest; 输出: Trip.com 人工核验 deep link Offer, 后续可替换 Partner API 报价
+│   ├── fliggy.py # 输入: SearchRequest; 输出: 飞猪人工核验 deep link Offer, 后续可替换开放平台/商务 API 报价
 │   └── research/
-│       ├── fli_google.py
-│       ├── kiwi.py
-│       └── letsfg.py
+│       ├── fli_google.py # 输入: SearchRequest; 输出: Google Flights/fli 研究核验链接 Offer; 默认不进入生产路径
+│       ├── kiwi.py # 输入: SearchRequest; 输出: Kiwi/Nomad 研究核验链接 Offer; 用于自转机/拼接策略研究
+│       └── letsfg.py # 输入: SearchRequest + 研究工具上下文; 输出: 研究型 Offer 或 ProviderNotConfigured; 默认隔离
 ├── search/
-│   ├── orchestrator.py
-│   ├── expansion.py
-│   ├── normalize.py
-│   ├── rank.py
-│   └── reverse_strategy.py
+│   ├── orchestrator.py # 输入: SearchRequest + providers; 输出: SearchRunResult(offers, provider_runs, warnings), 并发调用并隔离失败
+│   ├── expansion.py # 输入: SearchRequest; 输出: SearchVariant 列表, 扩展销售地/币种/后续 multi-city 候选
+│   ├── normalize.py # 输入: provider 返回的 Offer; 输出: 补齐默认航段和统一字段后的 Offer
+│   ├── rank.py # 输入: normalized Offer; 输出: 按价格、风险、provider 排序后的 Offer
+│   └── reverse_strategy.py # 输入: SearchRequest + Offer 风险事实; 输出: StrategyPolicy、risk_score, 默认排除 hidden-city
 ├── pricing/
-│   ├── currency.py
-│   ├── fees.py
-│   └── compare.py
+│   ├── currency.py # 输入: 金额、源币种、目标币种、汇率表/未来汇率源; 输出: 目标币种金额
+│   ├── fees.py # 输入: 税费、服务费、支付费、行李费估算; 输出: FeeBreakdown.total
+│   └── compare.py # 输入: 原始价格 + 汇率转换器 + 费用拆分; 输出: comparable_amount
 ├── booking/
-│   ├── handoff.py
-│   └── checklist.py
+│   ├── handoff.py # 输入: Offer; 输出: BookingHandoff(provider, booking_link, manual_check_required, checklist)
+│   └── checklist.py # 输入: Offer.risk_flags、行李/退改签信息; 输出: 购买前人工确认清单
 ├── storage/
-│   ├── models.py
-│   └── repository.py
+│   ├── models.py # 输入: SearchRequest + Offer; 输出: SearchSnapshot、OfferSnapshot
+│   └── repository.py # 输入: SearchSnapshot; 输出: snapshot_id 或快照对象; 当前内存实现, 后续接 SQLite/PostgreSQL
 └── monitoring/
-    ├── watchlist.py
-    └── alerts.py
+    ├── watchlist.py # 输入: SearchRequest + 目标价格/币种; 输出: WatchlistItem
+    └── alerts.py # 输入: 最新 Offer + 降价阈值; 输出: PriceDropAlert 或 None
 ```
 
 ## 核心数据模型
