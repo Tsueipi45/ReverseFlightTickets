@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Protocol
+from urllib.parse import urlparse
 
 from sqlalchemy import DateTime, String, Text, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
@@ -76,7 +77,8 @@ class SqliteSearchRepository:
     """SQLite-backed snapshot repository for local MVP persistence."""
 
     def __init__(self, database_url: str) -> None:
-        if database_url.startswith("sqlite:///"):
+        _validate_sqlite_url(database_url)
+        if database_url.startswith("sqlite:///") and database_url != "sqlite:///:memory:":
             db_path = Path(database_url.removeprefix("sqlite:///"))
             if db_path.parent != Path("."):
                 db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -123,7 +125,8 @@ class SqliteWatchlistRepository:
     """SQLite-backed watchlist repository for local scheduled runs."""
 
     def __init__(self, database_url: str) -> None:
-        if database_url.startswith("sqlite:///"):
+        _validate_sqlite_url(database_url)
+        if database_url.startswith("sqlite:///") and database_url != "sqlite:///:memory:":
             db_path = Path(database_url.removeprefix("sqlite:///"))
             if db_path.parent != Path("."):
                 db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -161,6 +164,14 @@ class SqliteWatchlistRepository:
 
 def _request_json(request: SearchRequest) -> str:
     return json.dumps(request.to_dict(), ensure_ascii=False, sort_keys=True)
+
+
+def _validate_sqlite_url(database_url: str) -> None:
+    parsed = urlparse(database_url)
+    if parsed.scheme != "sqlite":
+        raise ValueError("only sqlite database URLs are supported")
+    if parsed.netloc not in ("", None):
+        raise ValueError("sqlite database URLs must not include a network location")
 
 
 def _snapshot_from_record(record: SearchSnapshotRecord) -> SearchSnapshot:

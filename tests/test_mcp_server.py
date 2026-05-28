@@ -74,3 +74,15 @@ def test_mcp_stdio_serves_newline_delimited_jsonrpc() -> None:
 
     response = json.loads(output_stream.getvalue())
     assert response == {"jsonrpc": "2.0", "id": 5, "result": {}}
+
+
+def test_mcp_stdio_serves_content_length_framed_jsonrpc() -> None:
+    body = json.dumps({"jsonrpc": "2.0", "id": 6, "method": "ping", "params": {}})
+    input_stream = StringIO(f"Content-Length: {len(body)}\r\n\r\n{body}")
+    output_stream = StringIO()
+
+    serve_stdio(input_stream=input_stream, output_stream=output_stream)
+
+    raw_output = output_stream.getvalue()
+    _, _, payload = raw_output.partition("\r\n\r\n")
+    assert json.loads(payload) == {"jsonrpc": "2.0", "id": 6, "result": {}}

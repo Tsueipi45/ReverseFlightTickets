@@ -3,6 +3,7 @@ from pathlib import Path
 
 import respx
 from httpx import Response
+import pytest
 
 from reverse_flight_tickets.domain import Offer
 from reverse_flight_tickets.pricing import (
@@ -91,3 +92,11 @@ def test_build_currency_converter_supports_frankfurter_source(tmp_path: Path) ->
     )
 
     assert isinstance(converter, CachedHttpRateConverter)
+
+
+def test_cached_http_rate_converter_requires_https_base_url(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="HTTPS"):
+        CachedHttpRateConverter(
+            cache_path=tmp_path / "rates.json",
+            api_base_url="http://localhost:8000",
+        )

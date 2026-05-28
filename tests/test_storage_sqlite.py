@@ -2,6 +2,8 @@ import asyncio
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from reverse_flight_tickets.domain import SearchRequest
 from reverse_flight_tickets.monitoring import WatchlistItem, build_price_trend_report
 from reverse_flight_tickets.providers import SkyscannerProvider
@@ -92,3 +94,13 @@ def test_price_trend_report_uses_snapshot_lowest_offer(tmp_path: Path) -> None:
     report = build_price_trend_report(repository.list_search_snapshots(request))
 
     assert report.points == ()
+
+
+def test_sqlite_repository_rejects_non_sqlite_url() -> None:
+    with pytest.raises(ValueError, match="only sqlite"):
+        SqliteSearchRepository("postgresql://example/test")
+
+
+def test_sqlite_repository_rejects_network_location() -> None:
+    with pytest.raises(ValueError, match="network location"):
+        SqliteWatchlistRepository("sqlite://remote/path.sqlite3")

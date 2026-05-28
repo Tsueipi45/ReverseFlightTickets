@@ -16,6 +16,7 @@
 - 风险策略：默认标记 hidden-city 排除；统一处理 split-ticket、self-transfer 和退改签规则风险权重。
 - 平台化基础：FastAPI REST 服务、`/api/search`、`/api/providers`、`/health`，以及内置本地 Web UI。
 - MCP server：提供 stdio JSON-RPC MCP 服务，包含 `list_providers` 和 `search_flights` 工具。
+- 安全加固：API 请求禁止额外字段和客户端覆盖数据库 URL；SQLite 仓库限制本地 SQLite URL；外部汇率源强制 HTTPS；MCP 支持 Content-Length framing；Web UI 结果渲染避免直接拼接未信任 HTML。
 - 持久化：SQLite 搜索快照保存和读取。
 - 价格追踪基础：watchlist 模型、内存和 SQLite watchlist 仓库、一次性 watchlist run、简单定时循环、降价阈值告警判断、价格趋势摘要。
 - 订购辅助基础：booking handoff、购买前检查清单、人工确认订单记录、订单状态和票号字段。
@@ -42,6 +43,6 @@
 
 最近一次本地结果：
 
-- `pytest`：54 passed
+- `pytest`：60 passed
 - `ruff`：passed
 - `mypy`：passed

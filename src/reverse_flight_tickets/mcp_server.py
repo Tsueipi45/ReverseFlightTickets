@@ -99,26 +99,23 @@ def serve_stdio(
     input_stream: TextIO | None = None,
     output_stream: TextIO | None = None,
 ) -> None:
-    """Serve newline-delimited JSON-RPC messages over stdio."""
+    """Serve MCP JSON-RPC messages over stdio.
+
+    Supports the MCP Content-Length framing used by clients and the newline-delimited JSON
+    form used by local smoke tests and shell debugging.
+    """
 
     input_stream = input_stream or sys.stdin
     output_stream = output_stream or sys.stdout
+    first_line = input_stream.readline()
+    if not first_line:
+        return
+    if first_line.lower().startswith("content-length:"):
+        _serve_content_length(first_line, input_stream, output_stream)
+        return
+    _handle_line(first_line, output_stream, framed=False)
     for line in input_stream:
-        if not line.strip():
-            continue
-        try:
-            message = json.loads(line)
-            if not isinstance(message, dict):
-                raise JsonRpcError(-32600, "invalid request")
-            response = handle_jsonrpc_message(message)
-        except json.JSONDecodeError as exc:
-            response = _error_response(None, -32700, f"parse error: {exc.msg}")
-        except JsonRpcError as exc:
-            response = _error_response(None, exc.code, exc.message)
-        if response is None:
-            continue
-        output_stream.write(json.dumps(response, ensure_ascii=False) + "\n")
-        output_stream.flush()
+        _handle_line(line, output_stream, framed=False)
 
 
 async def _call_tool(params: object) -> dict[str, object]:
@@ -262,6 +259,85 @@ def _error_response(message_id: object, code: int, message: str) -> dict[str, ob
         "id": message_id,
         "error": {"code": code, "message": message},
     }
+
+
+def _serve_content_length(
+    first_header: str,
+    input_stream: TextIO,
+    output_stream: TextIO,
+) -> None:
+    next_header: str | None = first_header
+    while next_header is not None:
+        headers: dict[str, str] = {}
+        line = next_header
+        next_header = None
+        while line.strip():
+            name, separator, value = line.partition(":")
+            if separator:
+                headers[name.strip().lower()] = value.strip()
+            line = input_stream.readline()
+            if not line:
+                return
+        length = _content_length(headers)
+        if length is None:
+            _write_response(
+                output_stream,
+                _error_response(None, -32600, "missing or invalid Content-Length"),
+                framed=True,
+            )
+            return
+        body = input_stream.read(length)
+        if len(body) != length:
+            _write_response(
+                output_stream,
+                _error_response(None, -32700, "incomplete message body"),
+                framed=True,
+            )
+            return
+        _handle_line(body, output_stream, framed=True)
+        next_header = input_stream.readline()
+        while next_header == "\r\n" or next_header == "\n":
+            next_header = input_stream.readline()
+        if not next_header:
+            return
+
+
+def _handle_line(line: str, output_stream: TextIO, *, framed: bool) -> None:
+    if not line.strip():
+        return
+    try:
+        message = json.loads(line)
+        if not isinstance(message, dict):
+            raise JsonRpcError(-32600, "invalid request")
+        response = handle_jsonrpc_message(message)
+    except json.JSONDecodeError as exc:
+        response = _error_response(None, -32700, f"parse error: {exc.msg}")
+    except JsonRpcError as exc:
+        response = _error_response(None, exc.code, exc.message)
+    if response is None:
+        return
+    _write_response(output_stream, response, framed=framed)
+
+
+def _write_response(output_stream: TextIO, response: dict[str, object], *, framed: bool) -> None:
+    payload = json.dumps(response, ensure_ascii=False)
+    if framed:
+        encoded_length = len(payload.encode("utf-8"))
+        output_stream.write(f"Content-Length: {encoded_length}\r\n\r\n{payload}")
+    else:
+        output_stream.write(payload + "\n")
+    output_stream.flush()
+
+
+def _content_length(headers: dict[str, str]) -> int | None:
+    raw = headers.get("content-length")
+    if raw is None:
+        return None
+    try:
+        length = int(raw)
+    except ValueError:
+        return None
+    return length if length >= 0 else None
 
 
 def main() -> None:

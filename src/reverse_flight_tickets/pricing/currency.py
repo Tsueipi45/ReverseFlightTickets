@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Mapping, Protocol
+from urllib.parse import urlparse
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
@@ -50,7 +51,7 @@ class CachedHttpRateConverter:
         self.static_rates = dict(static_rates or {})
         self.cache_path = Path(cache_path)
         self.cache_ttl_seconds = cache_ttl_seconds
-        self.api_base_url = api_base_url.rstrip("/")
+        self.api_base_url = _validate_https_base_url(api_base_url).rstrip("/")
         self.timeout_seconds = timeout_seconds
 
     def convert(self, amount: Decimal, from_currency: str, to_currency: str) -> Decimal:
@@ -164,6 +165,15 @@ def build_currency_converter(
 
 def _pair_key(from_currency: str, to_currency: str) -> str:
     return f"{from_currency.upper()}:{to_currency.upper()}"
+
+
+def _validate_https_base_url(value: str) -> str:
+    parsed = urlparse(value)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError("exchange rate API base URL must be HTTPS")
+    if parsed.username or parsed.password:
+        raise ValueError("exchange rate API base URL must not include credentials")
+    return value
 
 
 def _decimal_from_json(value: object) -> Decimal | None:

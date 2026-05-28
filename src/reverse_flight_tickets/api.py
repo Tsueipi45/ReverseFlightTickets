@@ -25,7 +25,7 @@ DEFAULT_EXCLUDED_CARRIERS = ("ZZ",)
 
 
 class SearchApiRequest(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     origin: str
     destination: str
@@ -46,7 +46,6 @@ class SearchApiRequest(BaseModel):
     exclude_carriers: tuple[str, ...] = ()
     include_test_carriers: bool = False
     save_snapshot: bool = False
-    db_url: str | None = None
 
 
 app = FastAPI(
@@ -104,7 +103,7 @@ async def search(payload: SearchApiRequest) -> dict[str, object]:
     result = await orchestrator.search(request, context)
     snapshot_id: str | None = None
     if payload.save_snapshot:
-        repository = SqliteSearchRepository(payload.db_url or config.database_url)
+        repository = SqliteSearchRepository(config.database_url)
         snapshot_id = repository.save_search_snapshot(SearchSnapshot.from_search_result(result))
 
     response = result.to_dict()
@@ -506,7 +505,13 @@ WEB_UI_HTML = r"""<!doctype html>
         if (provider.research) return;
         const label = document.createElement("label");
         label.className = "choice";
-        label.innerHTML = `<input type="checkbox" name="provider" value="${provider.name}" ${provider.default_enabled ? "checked" : ""}>${provider.name}`;
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.name = "provider";
+        input.value = provider.name;
+        input.checked = Boolean(provider.default_enabled);
+        label.appendChild(input);
+        label.appendChild(document.createTextNode(provider.name));
         target.appendChild(label);
       });
     }
@@ -545,7 +550,12 @@ WEB_UI_HTML = r"""<!doctype html>
         if (!response.ok) throw new Error(data.detail || "Search failed");
         renderResults(data);
       } catch (error) {
-        document.getElementById("results").innerHTML = `<div class="error">${error.message}</div>`;
+        const results = document.getElementById("results");
+        results.innerHTML = "";
+        const errorBox = document.createElement("div");
+        errorBox.className = "error";
+        errorBox.textContent = error.message;
+        results.appendChild(errorBox);
       } finally {
         button.disabled = false;
         button.textContent = "Search";
@@ -557,52 +567,108 @@ WEB_UI_HTML = r"""<!doctype html>
       if (!data.offers.length) {
         document.getElementById("results").innerHTML = "<div class='empty'>No offers.</div>";
       } else {
-        const rows = data.offers.map((offer) => {
+        const table = document.createElement("table");
+        const thead = document.createElement("thead");
+        const headerRow = document.createElement("tr");
+        ["Provider", "Market", "Currency", "Amount", "Airlines", "Depart", "Arrive", "Ticketing", "Risks", "Link"].forEach((label) => {
+          const th = document.createElement("th");
+          th.textContent = label;
+          headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        const tbody = document.createElement("tbody");
+        data.offers.forEach((offer) => {
           const segments = offer.segments || [];
           const first = segments[0] || {};
           const last = segments[segments.length - 1] || {};
-          const risks = (offer.risk_flags || []).join(", ") || "-";
-          const link = offer.booking_link ? `<a href="${offer.booking_link}" target="_blank" rel="noreferrer">Open</a>` : "-";
-          return `<tr>
-            <td>${offer.provider}</td>
-            <td>${offer.source_market}</td>
-            <td>${offer.currency}</td>
-            <td>${text(offer.comparable_amount || offer.total_amount || "manual")}</td>
-            <td>${segments.map((segment) => segment.marketing_carrier || "").filter(Boolean).join(", ") || "-"}</td>
-            <td>${text(first.departure_time || first.departure_date)}</td>
-            <td>${text(last.arrival_time || last.departure_date)}</td>
-            <td>${offer.ticketing_type}</td>
-            <td>${risks}</td>
-            <td>${link}</td>
-          </tr>`;
-        }).join("");
-        document.getElementById("results").innerHTML = `<table>
-          <thead><tr><th>Provider</th><th>Market</th><th>Currency</th><th>Amount</th><th>Airlines</th><th>Depart</th><th>Arrive</th><th>Ticketing</th><th>Risks</th><th>Link</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>`;
+          const values = [
+            offer.provider,
+            offer.source_market,
+            offer.currency,
+            text(offer.comparable_amount || offer.total_amount || "manual"),
+            segments.map((segment) => segment.marketing_carrier || "").filter(Boolean).join(", ") || "-",
+            text(first.departure_time || first.departure_date),
+            text(last.arrival_time || last.departure_date),
+            offer.ticketing_type,
+            (offer.risk_flags || []).join(", ") || "-"
+          ];
+          const row = document.createElement("tr");
+          values.forEach((value) => {
+            const td = document.createElement("td");
+            td.textContent = text(value);
+            row.appendChild(td);
+          });
+          const linkCell = document.createElement("td");
+          if (offer.booking_link) {
+            const link = document.createElement("a");
+            link.href = offer.booking_link;
+            link.target = "_blank";
+            link.rel = "noreferrer";
+            link.textContent = "Open";
+            linkCell.appendChild(link);
+          } else {
+            linkCell.textContent = "-";
+          }
+          row.appendChild(linkCell);
+          tbody.appendChild(row);
+        });
+        table.appendChild(thead);
+        table.appendChild(tbody);
+        const results = document.getElementById("results");
+        results.innerHTML = "";
+        results.appendChild(table);
       }
       renderRecommendations(data.recommendations || {});
     }
 
     function renderRecommendations(recommendations) {
       const target = document.getElementById("recommendations");
-      const items = [];
+      target.innerHTML = "";
+      const items = document.createDocumentFragment();
       const addOffer = (title, offer) => {
         if (!offer) return;
-        items.push(`<div class="rec"><div class="rec-title">${title}</div><div class="rec-main"><span>${offer.provider}</span><span>${text(offer.comparable_amount || offer.total_amount || "manual")} ${offer.currency}</span></div></div>`);
+        items.appendChild(recommendationCard(title, offer.provider, `${text(offer.comparable_amount || offer.total_amount || "manual")} ${offer.currency}`));
       };
       addOffer("Lowest price", recommendations.lowest_price);
       addOffer("Lowest risk", recommendations.lowest_risk);
       addOffer("Best value", recommendations.best_value);
       (recommendations.savings_vs_risk || []).slice(0, 3).forEach((item, index) => {
-        items.push(`<div class="rec"><div class="rec-title">Savings ${index + 1}</div><div class="rec-main"><span>${item.offer.provider}</span><span>${item.savings_amount} / <span class="risk">${item.risk_score}</span></span></div></div>`);
+        items.appendChild(recommendationCard(`Savings ${index + 1}`, item.offer.provider, `${item.savings_amount} / ${item.risk_score}`));
       });
-      target.innerHTML = items.length ? items.join("") : "<div class='empty'>No data.</div>";
+      if (items.childNodes.length) {
+        target.appendChild(items);
+      } else {
+        target.innerHTML = "<div class='empty'>No data.</div>";
+      }
+    }
+
+    function recommendationCard(title, left, right) {
+      const card = document.createElement("div");
+      card.className = "rec";
+      const heading = document.createElement("div");
+      heading.className = "rec-title";
+      heading.textContent = title;
+      const main = document.createElement("div");
+      main.className = "rec-main";
+      const leftSpan = document.createElement("span");
+      leftSpan.textContent = text(left);
+      const rightSpan = document.createElement("span");
+      rightSpan.textContent = text(right);
+      main.appendChild(leftSpan);
+      main.appendChild(rightSpan);
+      card.appendChild(heading);
+      card.appendChild(main);
+      return card;
     }
 
     init().catch((error) => {
       document.getElementById("health").textContent = "offline";
-      document.getElementById("results").innerHTML = `<div class="error">${error.message}</div>`;
+      const results = document.getElementById("results");
+      results.innerHTML = "";
+      const errorBox = document.createElement("div");
+      errorBox.className = "error";
+      errorBox.textContent = error.message;
+      results.appendChild(errorBox);
     });
   </script>
 </body>

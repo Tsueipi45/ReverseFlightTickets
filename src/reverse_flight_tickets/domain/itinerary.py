@@ -28,6 +28,10 @@ def _code(value: str, field_name: str) -> str:
     normalized = value.strip().upper()
     if not normalized:
         raise ValueError(f"{field_name} cannot be empty")
+    if len(normalized) > 8:
+        raise ValueError(f"{field_name} is too long")
+    if not normalized.replace("-", "").isalnum():
+        raise ValueError(f"{field_name} must be alphanumeric")
     return normalized
 
 
@@ -186,8 +190,18 @@ class SearchRequest(BaseModel):
             raise ValueError("at least one allowed market is required")
         if not allowed_currencies:
             raise ValueError("at least one allowed currency is required")
+        if len(allowed_markets) > 8:
+            raise ValueError("allowed_markets cannot include more than 8 entries")
+        if len(allowed_currencies) > 8:
+            raise ValueError("allowed_currencies cannot include more than 8 entries")
+        if len(stopovers) > 8:
+            raise ValueError("stopovers cannot include more than 8 entries")
         if self.date_flexibility_days < 0:
             raise ValueError("date_flexibility_days cannot be negative")
+        if self.date_flexibility_days > 7:
+            raise ValueError("date_flexibility_days cannot exceed 7")
+        if self.passengers.total > 9:
+            raise ValueError("passenger count cannot exceed 9")
         object.__setattr__(self, "allowed_markets", allowed_markets)
         object.__setattr__(self, "allowed_currencies", allowed_currencies)
         object.__setattr__(self, "stopovers", stopovers)

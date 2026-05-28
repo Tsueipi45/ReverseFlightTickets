@@ -239,6 +239,14 @@ rft-mcp
 
 当前 MCP 工具包括 `list_providers` 和 `search_flights`。`search_flights` 返回与 REST/CLI 相同的规范化报价、provider 状态、推荐和风险标签结构。
 
+## 安全边界
+
+- REST API 不接受请求体中的额外字段，快照只写入本地配置的 SQLite 数据库。
+- 本地持久化层只接受 SQLite URL，不接受网络数据库 URL。
+- 外部汇率源只允许 HTTPS base URL，静态汇率会优先于外部请求。
+- Web UI 使用 DOM 文本节点渲染结果，避免把 provider 返回字段当作 HTML 执行。
+- 自动下单仍未实现；所有购买入口仍是人工核验或 API provider 返回的报价信息。
+
 ## 项目结构
 
 ```text
