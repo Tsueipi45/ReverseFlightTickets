@@ -15,7 +15,7 @@ from reverse_flight_tickets.compliance import (
     default_terms_registry,
 )
 from reverse_flight_tickets.domain import Offer, SearchRequest
-from reverse_flight_tickets.pricing import StaticRateConverter
+from reverse_flight_tickets.pricing import CurrencyConverter, StaticRateConverter
 from reverse_flight_tickets.pricing.normalize import apply_comparable_pricing
 from reverse_flight_tickets.providers.base import FlightProvider, ProviderContext
 from reverse_flight_tickets.search.expansion import SearchVariant, expand_request
@@ -117,6 +117,7 @@ class SearchOrchestrator:
         timeout_seconds: float = 20.0,
         excluded_carriers: Iterable[str] = (),
         exchange_rates: dict[tuple[str, str], Decimal] | None = None,
+        currency_converter: CurrencyConverter | None = None,
         payment_fee_rate: Decimal = Decimal("0"),
         baggage_fee_amount: Decimal = Decimal("0"),
         terms_registry: ProviderTermsRegistry | None = None,
@@ -126,6 +127,7 @@ class SearchOrchestrator:
         self.timeout_seconds = timeout_seconds
         self.excluded_carriers = normalize_carrier_codes(excluded_carriers)
         self.exchange_rates = exchange_rates or {}
+        self.currency_converter = currency_converter or StaticRateConverter(rates=self.exchange_rates)
         self.payment_fee_rate = payment_fee_rate
         self.baggage_fee_amount = baggage_fee_amount
         self.terms_registry = terms_registry or default_terms_registry()
@@ -148,7 +150,7 @@ class SearchOrchestrator:
         priced = apply_comparable_pricing(
             normalized,
             target_currency=request.allowed_currencies[0],
-            converter=StaticRateConverter(rates=self.exchange_rates),
+            converter=self.currency_converter,
             payment_fee_rate=self.payment_fee_rate,
             baggage_fee_amount=self.baggage_fee_amount,
         )

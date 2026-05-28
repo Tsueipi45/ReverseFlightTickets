@@ -12,7 +12,7 @@
 - Deep link provider：Skyscanner、Trip.com、飞猪、Google Flights research、Kiwi research。
 - 搜索扩展：销售地/币种组合、可配置日期弹性窗口、stopover multi-city 候选。
 - 结果处理：归一化、去重、指定航司过滤、基础排序、`lowest_price` / `lowest_risk` / `best_value` 推荐，以及“省钱金额 vs 风险”的排序结果。
-- 价格归一化：静态汇率表、支付费率、行李费估算接入搜索链路，排序前计算可比价。
+- 价格归一化：静态汇率表、可选 Frankfurter 外部汇率源、本地 JSON 汇率缓存、支付费率、行李费估算接入搜索链路，排序前计算可比价。
 - 风险策略：默认标记 hidden-city 排除；统一处理 split-ticket、self-transfer 和退改签规则风险权重。
 - 平台化基础：FastAPI REST 服务、`/api/search`、`/api/providers`、`/health`，以及内置本地 Web UI。
 - 持久化：SQLite 搜索快照保存和读取。
@@ -24,7 +24,6 @@
 ## 未完成
 
 - Multi-city 候选生成已支持显式 stopover；自动 stopover/路线发现仍未实现。
-- 真实外部汇率源和缓存未接入；当前是环境变量静态汇率表。
 - Watchlist 已有 SQLite 持久化、一次性 run 和本地 interval schedule；分布式后台调度仍未实现。
 - Skyscanner、Trip.com、飞猪仍是人工 deep link，没有接入官方/合作 API。
 - MCP server 未实现。
@@ -43,6 +42,6 @@
 
 最近一次本地结果：
 
-- `pytest`：45 passed
+- `pytest`：49 passed
 - `ruff`：passed
 - `mypy`：passed

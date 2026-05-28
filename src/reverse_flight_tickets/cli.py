@@ -24,6 +24,7 @@ from reverse_flight_tickets.providers import (
     ProviderContext,
     providers_from_names,
 )
+from reverse_flight_tickets.pricing import CurrencyConverter, build_currency_converter
 from reverse_flight_tickets.search.filters import normalize_carrier_codes
 from reverse_flight_tickets.search import SearchOrchestrator, SearchRunResult
 from reverse_flight_tickets.storage import (
@@ -447,7 +448,7 @@ async def _run_search(
             exclude_carrier=exclude_carrier,
             include_test_carriers=include_test_carriers,
         ),
-        exchange_rates=dict(config.exchange_rates),
+        currency_converter=_currency_converter_from_config(config),
         payment_fee_rate=config.payment_fee_rate,
         baggage_fee_amount=config.baggage_fee_amount,
     )
@@ -486,7 +487,7 @@ async def _run_watchlist(
             providers,
             timeout_seconds=config.provider_timeout_seconds,
             excluded_carriers=DEFAULT_EXCLUDED_CARRIERS,
-            exchange_rates=dict(config.exchange_rates),
+            currency_converter=_currency_converter_from_config(config),
             payment_fee_rate=config.payment_fee_rate,
             baggage_fee_amount=config.baggage_fee_amount,
         )
@@ -627,6 +628,17 @@ def _providers_from_names(
         return providers_from_names(provider_names, include_research=include_research)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
+
+
+def _currency_converter_from_config(config: AppConfig) -> CurrencyConverter:
+    return build_currency_converter(
+        exchange_rates=config.exchange_rates,
+        exchange_rate_source=config.exchange_rate_source,
+        cache_path=config.exchange_rate_cache_path,
+        cache_ttl_seconds=config.exchange_rate_cache_ttl_seconds,
+        api_base_url=config.exchange_rate_api_base_url,
+        timeout_seconds=config.exchange_rate_timeout_seconds,
+    )
 
 
 def _format_table(result: SearchRunResult) -> str:

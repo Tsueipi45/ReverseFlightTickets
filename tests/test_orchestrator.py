@@ -2,6 +2,7 @@ from decimal import Decimal
 from typing import Sequence
 
 from reverse_flight_tickets.domain import Offer, RiskFlag, SearchRequest, Segment, TicketingType
+from reverse_flight_tickets.pricing import StaticRateConverter
 from reverse_flight_tickets.providers import SkyscannerProvider
 from reverse_flight_tickets.providers.base import ProviderCapability, ProviderContext
 from reverse_flight_tickets.search import SearchOrchestrator
@@ -204,3 +205,30 @@ def test_orchestrator_applies_comparable_pricing_before_ranking() -> None:
 
     assert result.offers[0].currency == "CNY"
     assert result.offers[0].comparable_amount == Decimal("734.40")
+
+
+def test_orchestrator_accepts_injected_currency_converter() -> None:
+    request = SearchRequest.from_mapping(
+        {
+            "origin": "PVG",
+            "destination": "LAX",
+            "departure_date": "2026-10-01",
+            "allowed_currencies": "CNY",
+        }
+    )
+    offer = Offer(
+        provider="mock",
+        source_market="US",
+        currency="USD",
+        total_amount="100.00",
+    )
+
+    result = __import__("asyncio").run(
+        SearchOrchestrator(
+            [StaticProvider((offer,))],
+            currency_converter=StaticRateConverter(rates={("USD", "CNY"): Decimal("7.10")}),
+        ).search(request)
+    )
+
+    assert result.offers[0].currency == "CNY"
+    assert result.offers[0].comparable_amount == Decimal("710.00")

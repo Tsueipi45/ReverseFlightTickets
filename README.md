@@ -12,7 +12,7 @@ ReverseFlightTickets 是一个用于反向票查询与订购流程辅助的 Pyth
 - 官方/API provider：已支持 Duffel sandbox 和 Amadeus Self-Service test API。
 - 人工核验 deep link：已支持 Skyscanner、Trip.com、飞猪、Google Flights research、Kiwi research。
 - 搜索扩展：支持销售地/币种组合、可配置日期弹性窗口和 stopover multi-city 候选。
-- 价格归一化：支持静态汇率表、支付费和行李费估算，并在排序前计算可比价和“省钱金额 vs 风险”建议。
+- 价格归一化：支持静态汇率表、Frankfurter 外部汇率源、本地汇率缓存、支付费和行李费估算，并在排序前计算可比价和“省钱金额 vs 风险”建议。
 - 风险标记：支持人工核验、provider 未验证、split-ticket、自转机、退改签风险权重、hidden-city 默认排除等标签。
 - 快照与追踪：支持 SQLite 搜索快照、SQLite watchlist、一次性 watchlist run、简单定时循环、降价阈值告警和趋势摘要。
 - REST/Web UI：提供 FastAPI REST 服务和内置本地 Web UI。
@@ -279,7 +279,12 @@ GitHub Actions 会在 push 和 pull request 上运行同样的 lint、typecheck 
 
 可选运行配置：
 
-- `RFT_EXCHANGE_RATES`：静态汇率表，例如 `USD:CNY=7.20,CNY:USD=0.14`。
+- `RFT_EXCHANGE_RATES`：静态汇率表，例如 `USD:CNY=7.20,CNY:USD=0.14`；静态值会优先于外部汇率源。
+- `RFT_EXCHANGE_RATE_SOURCE`：汇率来源，默认 `static`；可设为 `frankfurter` 启用外部汇率查询。
+- `RFT_EXCHANGE_RATE_CACHE_PATH`：外部汇率 JSON 缓存路径，默认 `data/exchange_rates_cache.json`。
+- `RFT_EXCHANGE_RATE_CACHE_TTL_SECONDS`：汇率缓存有效期，默认 `86400`。
+- `RFT_EXCHANGE_RATE_API_BASE_URL`：Frankfurter API base URL，默认 `https://api.frankfurter.dev/v2`。
+- `RFT_EXCHANGE_RATE_TIMEOUT_SECONDS`：外部汇率请求超时秒数，默认 `5`。
 - `RFT_PAYMENT_FEE_RATE`：支付手续费率，例如 `0.03`。
 - `RFT_BAGGAGE_FEE_AMOUNT`：每个报价统一加上的行李费估算金额。
 

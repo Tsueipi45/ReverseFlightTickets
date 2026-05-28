@@ -16,6 +16,7 @@ from reverse_flight_tickets.providers import (
     available_provider_metadata,
     providers_from_names,
 )
+from reverse_flight_tickets.pricing import build_currency_converter
 from reverse_flight_tickets.search import SearchOrchestrator
 from reverse_flight_tickets.search.filters import normalize_carrier_codes
 from reverse_flight_tickets.storage import SearchSnapshot, SqliteSearchRepository
@@ -89,7 +90,14 @@ async def search(payload: SearchApiRequest) -> dict[str, object]:
         providers_to_query,
         timeout_seconds=config.provider_timeout_seconds,
         excluded_carriers=_excluded_carriers(payload),
-        exchange_rates=dict(config.exchange_rates),
+        currency_converter=build_currency_converter(
+            exchange_rates=config.exchange_rates,
+            exchange_rate_source=config.exchange_rate_source,
+            cache_path=config.exchange_rate_cache_path,
+            cache_ttl_seconds=config.exchange_rate_cache_ttl_seconds,
+            api_base_url=config.exchange_rate_api_base_url,
+            timeout_seconds=config.exchange_rate_timeout_seconds,
+        ),
         payment_fee_rate=config.payment_fee_rate,
         baggage_fee_amount=config.baggage_fee_amount,
     )

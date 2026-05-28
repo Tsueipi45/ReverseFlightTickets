@@ -74,6 +74,11 @@ class AppConfig(BaseModel):
     provider_timeout_seconds: float = 20.0
     database_url: str = "sqlite:///data/reverse_flight_tickets.sqlite3"
     exchange_rates: Mapping[tuple[str, str], Decimal] = Field(default_factory=dict)
+    exchange_rate_source: str = "static"
+    exchange_rate_cache_path: Path = Path("data/exchange_rates_cache.json")
+    exchange_rate_cache_ttl_seconds: int = 86_400
+    exchange_rate_api_base_url: str = "https://api.frankfurter.dev/v2"
+    exchange_rate_timeout_seconds: float = 5.0
     payment_fee_rate: Decimal = Decimal("0")
     baggage_fee_amount: Decimal = Decimal("0")
     credentials: Mapping[str, ProviderCredential] = Field(default_factory=dict)
@@ -114,6 +119,20 @@ class AppConfig(BaseModel):
                 "sqlite:///data/reverse_flight_tickets.sqlite3",
             ),
             exchange_rates=_rate_env("RFT_EXCHANGE_RATES"),
+            exchange_rate_source=os.getenv("RFT_EXCHANGE_RATE_SOURCE", "static"),
+            exchange_rate_cache_path=Path(
+                os.getenv("RFT_EXCHANGE_RATE_CACHE_PATH", "data/exchange_rates_cache.json")
+            ),
+            exchange_rate_cache_ttl_seconds=int(
+                os.getenv("RFT_EXCHANGE_RATE_CACHE_TTL_SECONDS", "86400")
+            ),
+            exchange_rate_api_base_url=os.getenv(
+                "RFT_EXCHANGE_RATE_API_BASE_URL",
+                "https://api.frankfurter.dev/v2",
+            ),
+            exchange_rate_timeout_seconds=float(
+                os.getenv("RFT_EXCHANGE_RATE_TIMEOUT_SECONDS", "5")
+            ),
             payment_fee_rate=Decimal(os.getenv("RFT_PAYMENT_FEE_RATE", "0")),
             baggage_fee_amount=Decimal(os.getenv("RFT_BAGGAGE_FEE_AMOUNT", "0")),
             credentials=credentials,

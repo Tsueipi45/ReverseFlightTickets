@@ -1,7 +1,16 @@
 from decimal import Decimal
+from pathlib import Path
+
+import respx
+from httpx import Response
 
 from reverse_flight_tickets.domain import Offer
-from reverse_flight_tickets.pricing import StaticRateConverter, estimate_fee_breakdown
+from reverse_flight_tickets.pricing import (
+    CachedHttpRateConverter,
+    StaticRateConverter,
+    build_currency_converter,
+    estimate_fee_breakdown,
+)
 from reverse_flight_tickets.pricing.normalize import apply_comparable_pricing
 
 
@@ -35,3 +44,50 @@ def test_apply_comparable_pricing_converts_currency_and_adds_estimated_fees() ->
 
     assert priced[0].currency == "CNY"
     assert priced[0].comparable_amount == Decimal("764.40")
+
+
+def test_cached_http_rate_converter_uses_cached_rate(tmp_path: Path) -> None:
+    cache_path = tmp_path / "rates.json"
+    cache_path.write_text(
+        """
+        {
+          "rates": {
+            "USD:CNY": {
+              "rate": "7.20",
+              "fetched_at": "2099-01-01T00:00:00+00:00",
+              "provider": "frankfurter",
+              "date": "2099-01-01"
+            }
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+    converter = CachedHttpRateConverter(cache_path=cache_path)
+
+    assert converter.convert(Decimal("100"), "USD", "CNY") == Decimal("720.00")
+
+
+@respx.mock
+def test_cached_http_rate_converter_fetches_and_caches_rate(tmp_path: Path) -> None:
+    cache_path = tmp_path / "rates.json"
+    respx.get("https://api.frankfurter.dev/v2/rate/USD/CNY").mock(
+        return_value=Response(200, json={"amount": 1.0, "base": "USD", "target": "CNY", "rate": 7.1})
+    )
+    converter = CachedHttpRateConverter(cache_path=cache_path)
+
+    assert converter.convert(Decimal("100"), "USD", "CNY") == Decimal("710.00")
+    assert '"USD:CNY"' in cache_path.read_text(encoding="utf-8")
+
+
+def test_build_currency_converter_supports_frankfurter_source(tmp_path: Path) -> None:
+    converter = build_currency_converter(
+        exchange_rates={},
+        exchange_rate_source="frankfurter",
+        cache_path=tmp_path / "rates.json",
+        cache_ttl_seconds=3600,
+        api_base_url="https://api.frankfurter.dev/v2",
+        timeout_seconds=5,
+    )
+
+    assert isinstance(converter, CachedHttpRateConverter)
