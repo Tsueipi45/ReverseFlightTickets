@@ -27,6 +27,7 @@ dev = [
 
 [project.scripts]
 rft = "reverse_flight_tickets.cli:main"
+rft-mcp = "reverse_flight_tickets.mcp_server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

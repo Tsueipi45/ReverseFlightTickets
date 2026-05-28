@@ -318,7 +318,7 @@ RiskFlag
 ### Milestone 8：平台化
 
 - [x] 提供 FastAPI REST 服务。
-- [ ] 提供 MCP server，让 LLM/Agent 调用查票工具。
+- [x] 提供 MCP server，让 LLM/Agent 调用查票工具。
 - [x] 提供 Web UI 或桌面 UI。
 - [ ] 增加用户配置、凭据加密和审计日志。
 

@@ -15,6 +15,7 @@
 - 价格归一化：静态汇率表、可选 Frankfurter 外部汇率源、本地 JSON 汇率缓存、支付费率、行李费估算接入搜索链路，排序前计算可比价。
 - 风险策略：默认标记 hidden-city 排除；统一处理 split-ticket、self-transfer 和退改签规则风险权重。
 - 平台化基础：FastAPI REST 服务、`/api/search`、`/api/providers`、`/health`，以及内置本地 Web UI。
+- MCP server：提供 stdio JSON-RPC MCP 服务，包含 `list_providers` 和 `search_flights` 工具。
 - 持久化：SQLite 搜索快照保存和读取。
 - 价格追踪基础：watchlist 模型、内存和 SQLite watchlist 仓库、一次性 watchlist run、简单定时循环、降价阈值告警判断、价格趋势摘要。
 - 订购辅助基础：booking handoff、购买前检查清单、人工确认订单记录、订单状态和票号字段。
@@ -26,7 +27,6 @@
 - Multi-city 候选生成已支持显式 stopover；自动 stopover/路线发现仍未实现。
 - Watchlist 已有 SQLite 持久化、一次性 run 和本地 interval schedule；分布式后台调度仍未实现。
 - Skyscanner、Trip.com、飞猪仍是人工 deep link，没有接入官方/合作 API。
-- MCP server 未实现。
 - 凭据加密和持久审计日志未实现。
 - 自动下单未实现；生产出票前仍必须明确 API 资质、支付、出票、退款和隐私责任边界。
 
@@ -42,6 +42,6 @@
 
 最近一次本地结果：
 
-- `pytest`：49 passed
+- `pytest`：54 passed
 - `ruff`：passed
 - `mypy`：passed

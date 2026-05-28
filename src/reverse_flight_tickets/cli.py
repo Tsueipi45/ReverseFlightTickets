@@ -187,6 +187,15 @@ def serve(
     uvicorn.run("reverse_flight_tickets.api:app", host=host, port=port, reload=reload)
 
 
+@app.command("mcp")
+def mcp() -> None:
+    """Run the MCP stdio server."""
+
+    from reverse_flight_tickets.mcp_server import serve_stdio
+
+    serve_stdio()
+
+
 @watchlist_app.command("add")
 def watchlist_add(
     json_input: Annotated[

@@ -16,6 +16,7 @@ ReverseFlightTickets 是一个用于反向票查询与订购流程辅助的 Pyth
 - 风险标记：支持人工核验、provider 未验证、split-ticket、自转机、退改签风险权重、hidden-city 默认排除等标签。
 - 快照与追踪：支持 SQLite 搜索快照、SQLite watchlist、一次性 watchlist run、简单定时循环、降价阈值告警和趋势摘要。
 - REST/Web UI：提供 FastAPI REST 服务和内置本地 Web UI。
+- MCP server：提供 stdio JSON-RPC MCP 工具服务，暴露 provider 列表和查票工具。
 - 合规基础：内置 provider terms registry 和内存 audit log，用于记录 provider 查询访问方式。
 - 订购辅助：支持 booking handoff、购买前检查清单、人工确认订单记录、订单状态和票号字段。
 
@@ -224,6 +225,20 @@ rft serve --host 127.0.0.1 --port 8000
 
 打开 `http://127.0.0.1:8000/` 使用网页界面；REST 端点包括 `GET /health`、`GET /api/providers` 和 `POST /api/search`。
 
+启动 MCP stdio server：
+
+```bash
+rft mcp
+```
+
+也可以直接使用脚本入口：
+
+```bash
+rft-mcp
+```
+
+当前 MCP 工具包括 `list_providers` 和 `search_flights`。`search_flights` 返回与 REST/CLI 相同的规范化报价、provider 状态、推荐和风险标签结构。
+
 ## 项目结构
 
 ```text
@@ -236,6 +251,7 @@ ReverseFlightTickets/
 │       ├── api.py
 │       ├── cli.py
 │       ├── config.py
+│       ├── mcp_server.py
 │       ├── domain/
 │       ├── providers/
 │       ├── search/
