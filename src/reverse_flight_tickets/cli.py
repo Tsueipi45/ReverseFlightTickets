@@ -8,6 +8,7 @@ from pathlib import Path
 from decimal import Decimal
 from typing import Annotated, Any, Sequence, TypedDict
 
+import click
 import typer
 
 from reverse_flight_tickets.config import AppConfig
@@ -19,18 +20,9 @@ from reverse_flight_tickets.monitoring import (
     evaluate_price_drop,
 )
 from reverse_flight_tickets.providers import (
-    AmadeusProvider,
-    DuffelProvider,
-    FliggyProvider,
     FlightProvider,
     ProviderContext,
-    SkyscannerProvider,
-    TripProvider,
-)
-from reverse_flight_tickets.providers.research import (
-    GoogleFlightsResearchProvider,
-    KiwiResearchProvider,
-    LetsFGResearchProvider,
+    providers_from_names,
 )
 from reverse_flight_tickets.search.filters import normalize_carrier_codes
 from reverse_flight_tickets.search import SearchOrchestrator, SearchRunResult
@@ -45,18 +37,6 @@ app = typer.Typer(help="ReverseFlightTickets CLI")
 watchlist_app = typer.Typer(help="Manage and run price watchlists")
 app.add_typer(watchlist_app, name="watchlist")
 
-PROVIDER_FACTORIES = {
-    "skyscanner": SkyscannerProvider,
-    "trip": TripProvider,
-    "fliggy": FliggyProvider,
-    "duffel": DuffelProvider,
-    "amadeus": AmadeusProvider,
-    "google_flights_research": GoogleFlightsResearchProvider,
-    "kiwi_research": KiwiResearchProvider,
-    "letsfg_research": LetsFGResearchProvider,
-}
-DEFAULT_PROVIDER_NAMES = ("skyscanner", "trip", "fliggy")
-RESEARCH_PROVIDER_NAMES = ("google_flights_research", "kiwi_research")
 DEFAULT_EXCLUDED_CARRIERS = ("ZZ",)
 
 
@@ -187,6 +167,23 @@ def search(
         typer.echo(_format_table(result))
     else:
         raise typer.BadParameter("output must be table or json")
+
+
+@app.command()
+def serve(
+    host: Annotated[str, typer.Option("--host", help="Bind host")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", min=1, max=65535, help="Bind port")] = 8000,
+    reload: Annotated[bool, typer.Option("--reload", help="Reload on code changes")] = False,
+) -> None:
+    """Run the local REST API and Web UI."""
+
+    try:
+        import uvicorn
+    except ImportError as exc:
+        raise click.ClickException(
+            "uvicorn is not installed; install project dependencies with .[dev] or requirements.txt"
+        ) from exc
+    uvicorn.run("reverse_flight_tickets.api:app", host=host, port=port, reload=reload)
 
 
 @watchlist_app.command("add")
@@ -626,13 +623,10 @@ def _providers_from_names(
     *,
     include_research: bool,
 ) -> tuple[FlightProvider, ...]:
-    names = provider_names or DEFAULT_PROVIDER_NAMES
-    if include_research:
-        names = names + RESEARCH_PROVIDER_NAMES
-    unknown = [name for name in names if name not in PROVIDER_FACTORIES]
-    if unknown:
-        raise typer.BadParameter(f"unknown provider(s): {', '.join(unknown)}")
-    return tuple(PROVIDER_FACTORIES[name]() for name in names)
+    try:
+        return providers_from_names(provider_names, include_research=include_research)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
 
 def _format_table(result: SearchRunResult) -> str:
@@ -698,6 +692,12 @@ def _format_table(result: SearchRunResult) -> str:
     if result.recommendations.best_value:
         lines.append("")
         lines.append(f"Best value: {result.recommendations.best_value.provider}")
+    if result.recommendations.savings_vs_risk:
+        top_savings = result.recommendations.savings_vs_risk[0]
+        lines.append(
+            f"Savings vs risk: {top_savings.offer.provider} saves "
+            f"{top_savings.savings_amount} at risk {top_savings.risk_score}"
+        )
     if result.warnings:
         lines.append("")
         lines.extend(f"Warning: {warning}" for warning in result.warnings)

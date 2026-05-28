@@ -111,7 +111,7 @@ ReverseFlightTickets
 - `httpx`：异步 HTTP 请求（已加入依赖，真实 API provider 待接入）
 - `pydantic`：领域模型和 provider 响应校验（已用于核心模型）
 - `typer`：CLI（已用于 `rft search`）
-- `fastapi`：后续 REST API
+- `fastapi`：REST API 与本地 Web UI（已加入依赖并提供基础服务）
 - `sqlalchemy` + SQLite/PostgreSQL：搜索和价格快照存储（已支持 SQLite 快照）
 - `apscheduler` 或 `celery`：价格追踪任务
 - `pytest` + `respx`：connector 单元测试和 HTTP mock（已加入依赖）
@@ -289,14 +289,14 @@ RiskFlag
 - [x] 支持可配置日期弹性窗口。
 - [x] 支持 split-ticket 检测和风险标记。
 - [x] 默认排除 hidden-city；若未来支持，必须单独开关和强风险提示。
-- [ ] 生成“省钱金额 vs 风险”的排序结果。
+- [x] 生成“省钱金额 vs 风险”的排序结果。
 
 ### Milestone 5：价格归一化和排序
 
 - [ ] 接入外部汇率源并缓存（当前支持环境变量静态汇率表）。
 - [x] 建立税费、服务费、支付手续费字段。
 - [x] 建立行李费用估算模型。
-- [ ] 建立退改签风险权重。
+- [x] 建立退改签风险权重。
 - [x] 输出 `lowest_price`、`best_value`、`lowest_risk` 三类推荐。
 
 ### Milestone 6：价格追踪
@@ -317,9 +317,9 @@ RiskFlag
 
 ### Milestone 8：平台化
 
-- [ ] 提供 FastAPI REST 服务。
+- [x] 提供 FastAPI REST 服务。
 - [ ] 提供 MCP server，让 LLM/Agent 调用查票工具。
-- [ ] 提供 Web UI 或桌面 UI。
+- [x] 提供 Web UI 或桌面 UI。
 - [ ] 增加用户配置、凭据加密和审计日志。
 
 ## 合规与风控要求

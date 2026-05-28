@@ -56,18 +56,35 @@ class ProviderRun(BaseModel):
         }
 
 
+class SavingsRiskRecommendation(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    offer: Offer
+    savings_amount: Decimal
+    risk_score: int
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "offer": self.offer.to_dict(),
+            "savings_amount": str(self.savings_amount),
+            "risk_score": self.risk_score,
+        }
+
+
 class SearchRecommendations(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     lowest_price: Offer | None = None
     lowest_risk: Offer | None = None
     best_value: Offer | None = None
+    savings_vs_risk: tuple[SavingsRiskRecommendation, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
             "lowest_price": self.lowest_price.to_dict() if self.lowest_price else None,
             "lowest_risk": self.lowest_risk.to_dict() if self.lowest_risk else None,
             "best_value": self.best_value.to_dict() if self.best_value else None,
+            "savings_vs_risk": [item.to_dict() for item in self.savings_vs_risk],
         }
 
 
@@ -268,4 +285,27 @@ class SearchOrchestrator:
             lowest_price=lowest_price,
             lowest_risk=lowest_risk,
             best_value=best_value,
+            savings_vs_risk=self._savings_vs_risk(priced),
+        )
+
+    def _savings_vs_risk(self, priced: tuple[Offer, ...]) -> tuple[SavingsRiskRecommendation, ...]:
+        priced_amounts = tuple(offer.display_amount for offer in priced)
+        amounts = tuple(amount for amount in priced_amounts if amount is not None)
+        if not amounts:
+            return ()
+        baseline = max(amounts)
+        recommendations = tuple(
+            SavingsRiskRecommendation(
+                offer=offer,
+                savings_amount=baseline - offer.display_amount,
+                risk_score=risk_score(offer),
+            )
+            for offer in priced
+            if offer.display_amount is not None
+        )
+        return tuple(
+            sorted(
+                recommendations,
+                key=lambda item: (-item.savings_amount, item.risk_score, item.offer.provider),
+            )
         )

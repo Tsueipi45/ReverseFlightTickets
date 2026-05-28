@@ -1,6 +1,6 @@
 # ReverseFlightTickets 当前状态
 
-更新时间：2026-05-27
+更新时间：2026-05-28
 
 ## 已完成
 
@@ -11,9 +11,10 @@
 - API provider：Duffel sandbox/API connector、Amadeus Self-Service test API connector。
 - Deep link provider：Skyscanner、Trip.com、飞猪、Google Flights research、Kiwi research。
 - 搜索扩展：销售地/币种组合、可配置日期弹性窗口、stopover multi-city 候选。
-- 结果处理：归一化、去重、指定航司过滤、基础排序、`lowest_price` / `lowest_risk` / `best_value` 推荐。
+- 结果处理：归一化、去重、指定航司过滤、基础排序、`lowest_price` / `lowest_risk` / `best_value` 推荐，以及“省钱金额 vs 风险”的排序结果。
 - 价格归一化：静态汇率表、支付费率、行李费估算接入搜索链路，排序前计算可比价。
-- 风险策略：默认标记 hidden-city 排除；统一处理 split-ticket 和 self-transfer 风险标签。
+- 风险策略：默认标记 hidden-city 排除；统一处理 split-ticket、self-transfer 和退改签规则风险权重。
+- 平台化基础：FastAPI REST 服务、`/api/search`、`/api/providers`、`/health`，以及内置本地 Web UI。
 - 持久化：SQLite 搜索快照保存和读取。
 - 价格追踪基础：watchlist 模型、内存和 SQLite watchlist 仓库、一次性 watchlist run、简单定时循环、降价阈值告警判断、价格趋势摘要。
 - 订购辅助基础：booking handoff、购买前检查清单、人工确认订单记录、订单状态和票号字段。
@@ -26,7 +27,7 @@
 - 真实外部汇率源和缓存未接入；当前是环境变量静态汇率表。
 - Watchlist 已有 SQLite 持久化、一次性 run 和本地 interval schedule；分布式后台调度仍未实现。
 - Skyscanner、Trip.com、飞猪仍是人工 deep link，没有接入官方/合作 API。
-- FastAPI REST、MCP server、Web/Desktop UI 未实现。
+- MCP server 未实现。
 - 凭据加密和持久审计日志未实现。
 - 自动下单未实现；生产出票前仍必须明确 API 资质、支付、出票、退款和隐私责任边界。
 
@@ -42,6 +43,6 @@
 
 最近一次本地结果：
 
-- `pytest`：40 passed
+- `pytest`：45 passed
 - `ruff`：passed
 - `mypy`：passed

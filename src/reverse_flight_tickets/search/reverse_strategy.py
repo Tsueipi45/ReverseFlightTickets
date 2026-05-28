@@ -35,7 +35,19 @@ def risk_score(offer: Offer) -> int:
         RiskFlag.MANUAL_CHECK_REQUIRED: 5,
         RiskFlag.HIDDEN_CITY_EXCLUDED: 0,
     }
-    return sum(weights.get(flag, 0) for flag in offer.risk_flags)
+    return sum(weights.get(flag, 0) for flag in offer.risk_flags) + _fare_rule_risk_score(offer)
+
+
+def _fare_rule_risk_score(offer: Offer) -> int:
+    score = 0
+    for rule in offer.fare_rules:
+        if rule.refund_allowed is False:
+            score += 20
+        if rule.change_allowed is False:
+            score += 10
+        if rule.penalty_amount is not None and rule.penalty_amount > 0:
+            score += 5
+    return score
 
 
 def apply_strategy_policy(request: SearchRequest, offers: tuple[Offer, ...]) -> tuple[Offer, ...]:

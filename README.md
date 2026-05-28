@@ -12,9 +12,10 @@ ReverseFlightTickets 是一个用于反向票查询与订购流程辅助的 Pyth
 - 官方/API provider：已支持 Duffel sandbox 和 Amadeus Self-Service test API。
 - 人工核验 deep link：已支持 Skyscanner、Trip.com、飞猪、Google Flights research、Kiwi research。
 - 搜索扩展：支持销售地/币种组合、可配置日期弹性窗口和 stopover multi-city 候选。
-- 价格归一化：支持静态汇率表、支付费和行李费估算，并在排序前计算可比价。
-- 风险标记：支持人工核验、provider 未验证、split-ticket、自转机、hidden-city 默认排除等标签。
+- 价格归一化：支持静态汇率表、支付费和行李费估算，并在排序前计算可比价和“省钱金额 vs 风险”建议。
+- 风险标记：支持人工核验、provider 未验证、split-ticket、自转机、退改签风险权重、hidden-city 默认排除等标签。
 - 快照与追踪：支持 SQLite 搜索快照、SQLite watchlist、一次性 watchlist run、简单定时循环、降价阈值告警和趋势摘要。
+- REST/Web UI：提供 FastAPI REST 服务和内置本地 Web UI。
 - 合规基础：内置 provider terms registry 和内存 audit log，用于记录 provider 查询访问方式。
 - 订购辅助：支持 booking handoff、购买前检查清单、人工确认订单记录、订单状态和票号字段。
 
@@ -215,6 +216,14 @@ rft watchlist run
 rft watchlist schedule --interval-seconds 3600 --iterations 3
 ```
 
+启动本地 REST API 和 Web UI：
+
+```bash
+rft serve --host 127.0.0.1 --port 8000
+```
+
+打开 `http://127.0.0.1:8000/` 使用网页界面；REST 端点包括 `GET /health`、`GET /api/providers` 和 `POST /api/search`。
+
 ## 项目结构
 
 ```text
@@ -224,6 +233,7 @@ ReverseFlightTickets/
 │       └── ci.yml
 ├── src/
 │   └── reverse_flight_tickets/
+│       ├── api.py
 │       ├── cli.py
 │       ├── config.py
 │       ├── domain/
