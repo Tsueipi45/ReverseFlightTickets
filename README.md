@@ -171,7 +171,7 @@ rft import-browser path/to/rft-fliggy-2026-05-29.csv --save-snapshot
 rft serve --host 127.0.0.1 --port 8001
 ```
 
-导入的浏览器报价会标记为 `manual_check_required` 和 `provider_unverified`，用于提醒这些数据来自页面可见信息，需要人工核验后再订购。
+Web UI 导入区的 `Snapshot` 默认勾选；保存后，同一航线、日期、乘客和舱位的后续搜索会把已保存的脚本报价与当前 provider 结果合并到 Offers 和 Recommendations。导入的浏览器报价会标记为 `manual_check_required` 和 `provider_unverified`，用于提醒这些数据来自页面可见信息，需要人工核验后再订购。
 
 添加 watchlist：
 

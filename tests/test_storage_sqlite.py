@@ -5,10 +5,12 @@ from pathlib import Path
 import pytest
 
 from reverse_flight_tickets.domain import SearchRequest
+from reverse_flight_tickets.domain import Offer
 from reverse_flight_tickets.monitoring import WatchlistItem, build_price_trend_report
 from reverse_flight_tickets.providers import SkyscannerProvider
 from reverse_flight_tickets.search import SearchOrchestrator
 from reverse_flight_tickets.storage import (
+    OfferSnapshot,
     SearchSnapshot,
     SqliteSearchRepository,
     SqliteWatchlistRepository,
@@ -52,6 +54,50 @@ def test_sqlite_repository_lists_snapshots_for_request(tmp_path: Path) -> None:
 
     assert len(snapshots) == 1
     assert snapshots[0].request == request
+
+
+def test_sqlite_repository_lists_route_snapshots_across_markets(tmp_path: Path) -> None:
+    us_request = SearchRequest.from_mapping(
+        {
+            "origin": "SHA",
+            "destination": "TPE",
+            "departure_date": "2026-06-02",
+            "return_date": "2026-06-12",
+            "allowed_markets": ["US"],
+            "allowed_currencies": ["USD"],
+        }
+    )
+    cn_request = SearchRequest.from_mapping(
+        {
+            "origin": "SHA",
+            "destination": "TPE",
+            "departure_date": "2026-06-02",
+            "return_date": "2026-06-12",
+            "allowed_markets": ["CN"],
+            "allowed_currencies": ["CNY"],
+        }
+    )
+    repository = SqliteSearchRepository(f"sqlite:///{tmp_path / 'routes.sqlite3'}")
+    repository.save_search_snapshot(
+        SearchSnapshot(
+            request=cn_request,
+            offers=(
+                OfferSnapshot(
+                    offer=Offer(
+                        provider="fliggy-browser",
+                        source_market="CN",
+                        currency="CNY",
+                        total_amount="2225",
+                    )
+                ),
+            ),
+        )
+    )
+
+    snapshots = repository.list_route_snapshots(us_request)
+
+    assert len(snapshots) == 1
+    assert snapshots[0].offers[0].offer.provider == "fliggy-browser"
 
 
 def test_sqlite_watchlist_repository_round_trips_provider_names(tmp_path: Path) -> None:

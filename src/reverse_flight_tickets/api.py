@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -10,16 +11,18 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from reverse_flight_tickets import __version__
 from reverse_flight_tickets.config import AppConfig
-from reverse_flight_tickets.domain import SearchRequest
+from reverse_flight_tickets.domain import Offer, SearchRequest
 from reverse_flight_tickets.importers import BrowserExportError, import_browser_export_text
 from reverse_flight_tickets.providers import (
     ProviderContext,
     available_provider_metadata,
     providers_from_names,
 )
-from reverse_flight_tickets.pricing import build_currency_converter
+from reverse_flight_tickets.pricing import CurrencyConverter, build_currency_converter
+from reverse_flight_tickets.pricing.normalize import apply_comparable_pricing
 from reverse_flight_tickets.search import SearchOrchestrator
 from reverse_flight_tickets.search.filters import normalize_carrier_codes
+from reverse_flight_tickets.search.rank import rank_offers
 from reverse_flight_tickets.storage import SearchSnapshot, SqliteSearchRepository
 
 DEFAULT_EXCLUDED_CARRIERS = ("ZZ",)
@@ -95,29 +98,40 @@ async def search(payload: SearchApiRequest) -> dict[str, object]:
         credentials=config.provider_secret_map(),
         timeout_seconds=config.provider_timeout_seconds,
     )
+    currency_converter = build_currency_converter(
+        exchange_rates=config.exchange_rates,
+        exchange_rate_source=config.exchange_rate_source,
+        cache_path=config.exchange_rate_cache_path,
+        cache_ttl_seconds=config.exchange_rate_cache_ttl_seconds,
+        api_base_url=config.exchange_rate_api_base_url,
+        timeout_seconds=config.exchange_rate_timeout_seconds,
+    )
     orchestrator = SearchOrchestrator(
         providers_to_query,
         timeout_seconds=config.provider_timeout_seconds,
         excluded_carriers=_excluded_carriers(payload),
-        currency_converter=build_currency_converter(
-            exchange_rates=config.exchange_rates,
-            exchange_rate_source=config.exchange_rate_source,
-            cache_path=config.exchange_rate_cache_path,
-            cache_ttl_seconds=config.exchange_rate_cache_ttl_seconds,
-            api_base_url=config.exchange_rate_api_base_url,
-            timeout_seconds=config.exchange_rate_timeout_seconds,
-        ),
+        currency_converter=currency_converter,
         payment_fee_rate=config.payment_fee_rate,
         baggage_fee_amount=config.baggage_fee_amount,
     )
     result = await orchestrator.search(request, context)
     snapshot_id: str | None = None
+    repository = SqliteSearchRepository(config.database_url)
     if payload.save_snapshot:
-        repository = SqliteSearchRepository(config.database_url)
         snapshot_id = repository.save_search_snapshot(SearchSnapshot.from_search_result(result))
 
     response = result.to_dict()
     response["snapshot_id"] = snapshot_id
+    response.update(
+        _aggregate_response(
+            repository,
+            request,
+            tuple(result.offers),
+            currency_converter=currency_converter,
+            payment_fee_rate=config.payment_fee_rate,
+            baggage_fee_amount=config.baggage_fee_amount,
+        )
+    )
     return response
 
 
@@ -147,6 +161,25 @@ async def import_browser(payload: BrowserImportApiRequest) -> dict[str, object]:
 
     response = result.to_dict()
     response["snapshot_id"] = snapshot_id
+    repository = SqliteSearchRepository(config.database_url)
+    currency_converter = build_currency_converter(
+        exchange_rates=config.exchange_rates,
+        exchange_rate_source=config.exchange_rate_source,
+        cache_path=config.exchange_rate_cache_path,
+        cache_ttl_seconds=config.exchange_rate_cache_ttl_seconds,
+        api_base_url=config.exchange_rate_api_base_url,
+        timeout_seconds=config.exchange_rate_timeout_seconds,
+    )
+    response.update(
+        _aggregate_response(
+            repository,
+            result.request,
+            tuple(result.offers),
+            currency_converter=currency_converter,
+            payment_fee_rate=config.payment_fee_rate,
+            baggage_fee_amount=config.baggage_fee_amount,
+        )
+    )
     return response
 
 
@@ -177,6 +210,126 @@ def _search_request(payload: SearchApiRequest, config: AppConfig) -> SearchReque
 def _excluded_carriers(payload: SearchApiRequest) -> tuple[str, ...]:
     carriers: tuple[str, ...] = () if payload.include_test_carriers else DEFAULT_EXCLUDED_CARRIERS
     return normalize_carrier_codes(carriers + payload.exclude_carriers)
+
+
+def _aggregate_response(
+    repository: SqliteSearchRepository,
+    request: SearchRequest,
+    current_offers: tuple[Offer, ...],
+    *,
+    currency_converter: CurrencyConverter,
+    payment_fee_rate: Decimal,
+    baggage_fee_amount: Decimal,
+) -> dict[str, object]:
+    historical_offers = tuple(
+        offer_snapshot.offer
+        for snapshot in repository.list_route_snapshots(request)
+        for offer_snapshot in snapshot.offers
+    )
+    target_currency = request.allowed_currencies[0]
+    offers = _deduplicate_offers(tuple(historical_offers) + tuple(current_offers))
+    priced = _price_aggregate_offers(
+        offers,
+        target_currency=target_currency,
+        currency_converter=currency_converter,
+        payment_fee_rate=payment_fee_rate,
+        baggage_fee_amount=baggage_fee_amount,
+    )
+    ranked = rank_offers(priced)
+    recommendation_offers = tuple(
+        offer for offer in ranked if not _is_unconverted_foreign_offer(offer, target_currency)
+    )
+    recommendations = SearchOrchestrator([])._recommend(recommendation_offers)
+    providers = sorted({offer.provider for offer in ranked})
+    unconverted_offer_count = sum(
+        1 for offer in ranked if _is_unconverted_foreign_offer(offer, target_currency)
+    )
+    return {
+        "aggregate_offers": [offer.to_dict() for offer in ranked],
+        "aggregate_recommendations": recommendations.to_dict(),
+        "aggregate": {
+            "offer_count": len(ranked),
+            "provider_count": len(providers),
+            "providers": providers,
+            "target_currency": target_currency,
+            "unconverted_offer_count": unconverted_offer_count,
+        },
+    }
+
+
+def _price_aggregate_offers(
+    offers: tuple[Offer, ...],
+    *,
+    target_currency: str,
+    currency_converter: CurrencyConverter,
+    payment_fee_rate: Decimal,
+    baggage_fee_amount: Decimal,
+) -> tuple[Offer, ...]:
+    priced: list[Offer] = []
+    for offer in offers:
+        if offer.total_amount is None:
+            priced.append(offer)
+            continue
+        if offer.currency.upper() == target_currency.upper():
+            if offer.comparable_amount is None:
+                priced.extend(
+                    apply_comparable_pricing(
+                        (offer,),
+                        target_currency=target_currency,
+                        converter=currency_converter,
+                        payment_fee_rate=payment_fee_rate,
+                        baggage_fee_amount=baggage_fee_amount,
+                    )
+                )
+            else:
+                priced.append(offer)
+            continue
+        converted = apply_comparable_pricing(
+            (offer,),
+            target_currency=target_currency,
+            converter=currency_converter,
+            payment_fee_rate=payment_fee_rate,
+            baggage_fee_amount=baggage_fee_amount,
+        )[0]
+        if converted.currency.upper() == target_currency.upper():
+            priced.append(converted)
+        else:
+            priced.append(offer.model_copy(update={"comparable_amount": None}))
+    return tuple(priced)
+
+
+def _is_unconverted_foreign_offer(offer: Offer, target_currency: str) -> bool:
+    return offer.total_amount is not None and offer.currency.upper() != target_currency.upper()
+
+
+def _deduplicate_offers(offers: tuple[Offer, ...]) -> tuple[Offer, ...]:
+    seen: set[tuple[object, ...]] = set()
+    deduped: list[Offer] = []
+    for offer in offers:
+        segments = tuple(getattr(offer, "segments", ()))
+        segment_key = tuple(
+            (
+                getattr(segment, "origin", None),
+                getattr(segment, "destination", None),
+                getattr(segment, "departure_date", None),
+                getattr(segment, "marketing_carrier", None),
+                getattr(segment, "flight_number", None),
+            )
+            for segment in segments
+        )
+        key = (
+            getattr(offer, "provider", None),
+            getattr(offer, "source_market", None),
+            getattr(offer, "currency", None),
+            str(getattr(offer, "total_amount", None)),
+            getattr(offer, "booking_link", None),
+            segment_key,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(offer)
+    return tuple(deduped)
 
 
 WEB_UI_HTML = r"""<!doctype html>
@@ -566,7 +719,7 @@ WEB_UI_HTML = r"""<!doctype html>
         <input id="browser_target_currency" placeholder="CNY">
       </label>
       <div class="span-3 toggles">
-        <label class="choice"><input id="browser_save_snapshot" type="checkbox">Snapshot</label>
+        <label class="choice"><input id="browser_save_snapshot" type="checkbox" checked>Snapshot</label>
       </div>
       <label class="span-12">Export content
         <textarea id="browser_content" placeholder="Paste userscript JSON or CSV here"></textarea>
@@ -585,7 +738,10 @@ WEB_UI_HTML = r"""<!doctype html>
         <div class="table-wrap" id="results"><div class="empty">No offers.</div></div>
       </section>
       <section>
-        <div class="section-title">Recommendations</div>
+        <div class="section-title">
+          <span>Recommendations</span>
+          <span class="status" id="aggregate-count">current only</span>
+        </div>
         <div class="recommendations" id="recommendations"><div class="empty">No data.</div></div>
       </section>
     </div>
@@ -710,6 +866,7 @@ WEB_UI_HTML = r"""<!doctype html>
 
     function renderError(message) {
       document.getElementById("offer-count").textContent = "0";
+      document.getElementById("aggregate-count").textContent = "current only";
       const results = document.getElementById("results");
       results.innerHTML = "";
       const errorBox = document.createElement("div");
@@ -725,6 +882,14 @@ WEB_UI_HTML = r"""<!doctype html>
       if (data.request) {
         parts.push(`${data.request.origin} -> ${data.request.destination}`);
       }
+      if (data.aggregate) {
+        const extra = data.aggregate.unconverted_offer_count
+          ? `, ${data.aggregate.unconverted_offer_count} unconverted`
+          : "";
+        parts.push(
+          `aggregated ${data.aggregate.offer_count} offers from ${data.aggregate.provider_count} sources${extra}`
+        );
+      }
       (data.warnings || []).forEach((warning) => parts.push(warning));
       if (!parts.length) return;
       const status = document.createElement("div");
@@ -734,8 +899,12 @@ WEB_UI_HTML = r"""<!doctype html>
     }
 
     function renderResults(data) {
-      document.getElementById("offer-count").textContent = `${data.offers.length}`;
-      if (!data.offers.length) {
+      const offers = data.aggregate_offers && data.aggregate_offers.length ? data.aggregate_offers : data.offers;
+      const aggregate = data.aggregate || {};
+      const providerText = aggregate.provider_count ? `${aggregate.provider_count} sources` : "current only";
+      document.getElementById("offer-count").textContent = `${offers.length} (${data.offers.length} current)`;
+      document.getElementById("aggregate-count").textContent = providerText;
+      if (!offers.length) {
         document.getElementById("results").innerHTML = "<div class='empty'>No offers.</div>";
       } else {
         const table = document.createElement("table");
@@ -748,7 +917,7 @@ WEB_UI_HTML = r"""<!doctype html>
         });
         thead.appendChild(headerRow);
         const tbody = document.createElement("tbody");
-        data.offers.forEach((offer) => {
+        offers.forEach((offer) => {
           const segments = offer.segments || [];
           const first = segments[0] || {};
           const last = segments[segments.length - 1] || {};
@@ -789,7 +958,7 @@ WEB_UI_HTML = r"""<!doctype html>
         results.innerHTML = "";
         results.appendChild(table);
       }
-      renderRecommendations(data.recommendations || {});
+      renderRecommendations(data.aggregate_recommendations || data.recommendations || {});
     }
 
     function renderRecommendations(recommendations) {

@@ -69,6 +69,10 @@ Web UI 导入：
 4. 可选填写目标币种并勾选 `Snapshot`。
 5. 点击 `Import offers`，导入结果会显示在同一个 Offers 表和 Recommendations 区块。
 
+Web UI 中 `Snapshot` 默认勾选。保存后，同一航线、同一出发/返程日期、同一乘客数和舱位的后续搜索，会自动把 SQLite 中已经保存的脚本报价与当前 provider 返回结果合并展示。合并时不要求销售地、币种或 provider 完全相同，因此飞猪/携程脚本快照可以和 Duffel、Amadeus、Skyscanner deep link 等来源一起出现在 Offers 表与 Recommendations 区块。
+
+推荐区使用聚合后的 `aggregate_recommendations`。如果跨币种比较需要排序到同一目标币种，请在 `.env` 中配置静态汇率 `RFT_EXCHANGE_RATES`，或启用 `RFT_EXCHANGE_RATE_SOURCE=frankfurter`。缺少汇率时，外币历史报价仍会出现在聚合列表中，但不会被当作目标币种价格参与最低价推荐。
+
 CLI 导入：
 
 导入并输出表格：

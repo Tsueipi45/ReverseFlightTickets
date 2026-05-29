@@ -1,3 +1,4 @@
+from decimal import Decimal
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -176,6 +177,80 @@ def test_api_import_browser_export_snapshot_uses_configured_database(
     assert response.status_code == 200
     assert response.json()["snapshot_id"]
     assert database_path.exists()
+
+
+def test_api_search_aggregates_route_snapshots_from_other_sources(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "aggregate-api.sqlite3"
+    monkeypatch.setattr(
+        api.AppConfig,
+        "from_env",
+        classmethod(
+            lambda cls: cls(
+                database_url=f"sqlite:///{database_path}",
+                exchange_rates={("CNY", "USD"): Decimal("0.14")},
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    import_response = client.post(
+        "/api/import-browser",
+        json={
+            "filename": "fliggy.json",
+            "save_snapshot": True,
+            "content": """
+            {
+              "schema_version": "rft-browser-offers/v1",
+              "source": "fliggy",
+              "request": {
+                "origin": "SHA",
+                "destination": "TPE",
+                "departure_date": "2026-06-02",
+                "return_date": "2026-06-12",
+                "allowed_markets": ["CN"],
+                "allowed_currencies": ["CNY"]
+              },
+              "offers": [
+                {
+                  "provider": "fliggy",
+                  "amount": "2225",
+                  "currency": "CNY",
+                  "flight_numbers": ["9C8951"],
+                  "departure_time": "08:15",
+                  "arrival_time": "10:15",
+                  "link": "https://example.test/fliggy"
+                }
+              ]
+            }
+            """,
+        },
+    )
+    assert import_response.status_code == 200
+
+    search_response = client.post(
+        "/api/search",
+        json={
+            "origin": "SHA",
+            "destination": "TPE",
+            "departure_date": "2026-06-02",
+            "return_date": "2026-06-12",
+            "provider_names": ["skyscanner"],
+            "allowed_markets": ["US"],
+            "allowed_currencies": ["USD"],
+        },
+    )
+
+    data = search_response.json()
+    assert search_response.status_code == 200
+    providers = {offer["provider"] for offer in data["aggregate_offers"]}
+    assert "fliggy-browser" in providers
+    assert "skyscanner" in providers
+    assert data["aggregate"]["provider_count"] >= 2
+    assert data["aggregate_recommendations"]["lowest_price"]["provider"] == "fliggy-browser"
+    assert data["aggregate_recommendations"]["lowest_price"]["currency"] == "USD"
 
 
 def test_api_import_browser_export_rejects_invalid_content() -> None:

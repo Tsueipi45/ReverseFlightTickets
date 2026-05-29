@@ -12,6 +12,7 @@
 - Deep link provider：Skyscanner、Trip.com、飞猪、Google Flights research、Kiwi research。
 - 浏览器可见报价采集：携程/飞猪油猴脚本，支持当前屏幕、已渲染列表、智能滚动采集，导出 JSON/CSV；飞猪 `searchJourney` URL 可解析往返城市和日期。
 - 浏览器报价导入：`rft import-browser` 和 Web UI `Import Browser Offers` 支持导入脚本 JSON/CSV，归一化为 `Offer` 后参与排序、推荐和 SQLite 快照；导入器可从飞猪 `page_url` 兜底补齐缺失查询日期。
+- Web UI 聚合：`/api/search` 和 `/api/import-browser` 会按同航线、日期、乘客和舱位读取 SQLite 历史快照，把已保存的脚本报价与当前 provider 结果合并展示和推荐。
 - 搜索扩展：销售地/币种组合、可配置日期弹性窗口、stopover multi-city 候选。
 - 结果处理：归一化、去重、指定航司过滤、基础排序、`lowest_price` / `lowest_risk` / `best_value` 推荐，以及“省钱金额 vs 风险”的排序结果。
 - 价格归一化：静态汇率表、可选 Frankfurter 外部汇率源、本地 JSON 汇率缓存、支付费率、行李费估算接入搜索链路，排序前计算可比价。
@@ -46,6 +47,6 @@
 
 最近一次本地结果：
 
-- `pytest`：68 passed
+- `pytest`：70 passed
 - `ruff`：passed
 - `mypy`：passed

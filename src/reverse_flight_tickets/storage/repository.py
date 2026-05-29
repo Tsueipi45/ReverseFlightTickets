@@ -27,6 +27,9 @@ class SearchRepository(Protocol):
     def list_search_snapshots(self, request: SearchRequest | None = None) -> tuple[SearchSnapshot, ...]:
         """Load search snapshots, optionally filtered by canonical request."""
 
+    def list_route_snapshots(self, request: SearchRequest) -> tuple[SearchSnapshot, ...]:
+        """Load snapshots for the same route and travel dates across sources/settings."""
+
 
 class InMemoryRepository:
     """Development repository used until durable storage is implemented."""
@@ -46,6 +49,13 @@ class InMemoryRepository:
         if request is None:
             return snapshots
         return tuple(snapshot for snapshot in snapshots if snapshot.request.to_dict() == request.to_dict())
+
+    def list_route_snapshots(self, request: SearchRequest) -> tuple[SearchSnapshot, ...]:
+        return tuple(
+            snapshot
+            for snapshot in self._snapshots.values()
+            if _same_route_request(snapshot.request, request)
+        )
 
 
 class Base(DeclarativeBase):
@@ -120,6 +130,16 @@ class SqliteSearchRepository:
         with Session(self.engine) as session:
             return tuple(_snapshot_from_record(record) for record in session.scalars(statement))
 
+    def list_route_snapshots(self, request: SearchRequest) -> tuple[SearchSnapshot, ...]:
+        with Session(self.engine) as session:
+            snapshots = tuple(
+                _snapshot_from_record(record)
+                for record in session.scalars(
+                    select(SearchSnapshotRecord).order_by(SearchSnapshotRecord.captured_at)
+                )
+            )
+        return tuple(snapshot for snapshot in snapshots if _same_route_request(snapshot.request, request))
+
 
 class SqliteWatchlistRepository:
     """SQLite-backed watchlist repository for local scheduled runs."""
@@ -164,6 +184,17 @@ class SqliteWatchlistRepository:
 
 def _request_json(request: SearchRequest) -> str:
     return json.dumps(request.to_dict(), ensure_ascii=False, sort_keys=True)
+
+
+def _same_route_request(left: SearchRequest, right: SearchRequest) -> bool:
+    return (
+        left.origin == right.origin
+        and left.destination == right.destination
+        and left.departure_date == right.departure_date
+        and left.return_date == right.return_date
+        and left.passengers.total == right.passengers.total
+        and left.cabin == right.cabin
+    )
 
 
 def _validate_sqlite_url(database_url: str) -> None:
