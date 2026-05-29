@@ -25,7 +25,11 @@ from reverse_flight_tickets.providers import (
     ProviderContext,
     providers_from_names,
 )
-from reverse_flight_tickets.pricing import CurrencyConverter, build_currency_converter
+from reverse_flight_tickets.pricing import (
+    CurrencyConverter,
+    build_currency_converter,
+    convert_currency_amount,
+)
 from reverse_flight_tickets.search.filters import normalize_carrier_codes
 from reverse_flight_tickets.search import SearchOrchestrator, SearchRunResult
 from reverse_flight_tickets.storage import (
@@ -218,6 +222,50 @@ def import_browser(
         typer.echo(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     elif output == "table":
         typer.echo(_format_table(result))
+    else:
+        raise typer.BadParameter("output must be table or json")
+
+
+@app.command("fx")
+def fx(
+    amount: Annotated[str, typer.Argument(help="Amount to convert")],
+    from_currency: Annotated[str, typer.Option("--from", help="Source currency code")],
+    to_currency: Annotated[str, typer.Option("--to", help="Target currency code")],
+    output: Annotated[
+        str,
+        typer.Option("--output", help="Output format: table or json"),
+    ] = "table",
+) -> None:
+    """Convert an amount with the configured exchange-rate source."""
+
+    config = AppConfig.from_env()
+    try:
+        result = convert_currency_amount(
+            Decimal(amount),
+            from_currency=from_currency,
+            to_currency=to_currency,
+            converter=_currency_converter_from_config(config),
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if output == "json":
+        typer.echo(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    elif output == "table":
+        typer.echo(
+            _format_rows(
+                [
+                    ("amount", "from", "converted", "to", "rate"),
+                    (
+                        str(result.amount),
+                        result.from_currency,
+                        str(result.converted_amount),
+                        result.to_currency,
+                        str(result.rate),
+                    ),
+                ]
+            )
+        )
     else:
         raise typer.BadParameter("output must be table or json")
 

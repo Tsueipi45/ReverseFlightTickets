@@ -18,6 +18,27 @@ class CurrencyConverter(Protocol):
         """Convert a monetary amount to another currency."""
 
 
+class CurrencyConversion(BaseModel):
+    """A one-off currency conversion result for CLI/API/UI tools."""
+
+    model_config = ConfigDict(frozen=True)
+
+    amount: Decimal
+    from_currency: str
+    to_currency: str
+    converted_amount: Decimal
+    rate: Decimal
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "amount": str(self.amount),
+            "from_currency": self.from_currency,
+            "to_currency": self.to_currency,
+            "converted_amount": str(self.converted_amount),
+            "rate": str(self.rate),
+        }
+
+
 class StaticRateConverter(BaseModel):
     """Simple in-memory converter for deterministic local rates."""
 
@@ -161,6 +182,28 @@ def build_currency_converter(
             timeout_seconds=timeout_seconds,
         )
     raise ValueError(f"unsupported exchange rate source: {exchange_rate_source}")
+
+
+def convert_currency_amount(
+    amount: Decimal,
+    *,
+    from_currency: str,
+    to_currency: str,
+    converter: CurrencyConverter,
+) -> CurrencyConversion:
+    source = from_currency.upper()
+    target = to_currency.upper()
+    converted_amount = converter.convert(amount, source, target)
+    sample_amount = Decimal("10000")
+    sampled_converted = converter.convert(sample_amount, source, target)
+    rate = (sampled_converted / sample_amount).quantize(Decimal("0.000001"))
+    return CurrencyConversion(
+        amount=amount,
+        from_currency=source,
+        to_currency=target,
+        converted_amount=converted_amount,
+        rate=rate,
+    )
 
 
 def _pair_key(from_currency: str, to_currency: str) -> str:

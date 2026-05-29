@@ -179,6 +179,38 @@ def test_api_import_browser_export_snapshot_uses_configured_database(
     assert database_path.exists()
 
 
+def test_api_currency_convert_uses_configured_rates(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "fx-api.sqlite3"
+    monkeypatch.setattr(
+        api.AppConfig,
+        "from_env",
+        classmethod(
+            lambda cls: cls(
+                database_url=f"sqlite:///{database_path}",
+                exchange_rates={("CNY", "USD"): Decimal("0.14")},
+            )
+        ),
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/currency/convert",
+        json={"amount": "2225", "from_currency": "CNY", "to_currency": "USD"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "amount": "2225",
+        "from_currency": "CNY",
+        "to_currency": "USD",
+        "converted_amount": "311.50",
+        "rate": "0.140000",
+    }
+
+
 def test_api_search_aggregates_route_snapshots_from_other_sources(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,

@@ -16,6 +16,7 @@
 - 搜索扩展：销售地/币种组合、可配置日期弹性窗口、stopover multi-city 候选。
 - 结果处理：归一化、去重、指定航司过滤、基础排序、`lowest_price` / `lowest_risk` / `best_value` 推荐，以及“省钱金额 vs 风险”的排序结果。
 - 价格归一化：静态汇率表、可选 Frankfurter 外部汇率源、本地 JSON 汇率缓存、支付费率、行李费估算接入搜索链路，排序前计算可比价。
+- 汇率工具：`rft fx`、`/api/currency/convert` 和 Web UI `Currency Tool` 支持使用同一套汇率配置做手动换算。
 - 风险策略：默认标记 hidden-city 排除；统一处理 split-ticket、self-transfer 和退改签规则风险权重。
 - 平台化基础：FastAPI REST 服务、`/api/search`、`/api/import-browser`、`/api/providers`、`/health`，以及内置本地 Web UI。
 - MCP server：提供 stdio JSON-RPC MCP 服务，包含 `list_providers` 和 `search_flights` 工具。
@@ -47,6 +48,6 @@
 
 最近一次本地结果：
 
-- `pytest`：70 passed
+- `pytest`：73 passed
 - `ruff`：passed
 - `mypy`：passed

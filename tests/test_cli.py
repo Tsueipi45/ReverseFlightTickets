@@ -1,5 +1,10 @@
+from decimal import Decimal
 from pathlib import Path
 
+from pytest import MonkeyPatch
+from typer.testing import CliRunner
+
+from reverse_flight_tickets import cli
 from reverse_flight_tickets.cli import (
     _excluded_carriers,
     _format_table,
@@ -12,6 +17,8 @@ from reverse_flight_tickets.domain import Layover, Offer, SearchRequest, Segment
 from reverse_flight_tickets.monitoring import WatchlistItem
 from reverse_flight_tickets.search import SearchRunResult
 from reverse_flight_tickets.storage import SqliteWatchlistRepository
+
+runner = CliRunner()
 
 
 def test_cli_request_merges_json_and_overrides(tmp_path: Path) -> None:
@@ -137,6 +144,24 @@ def test_cli_adds_custom_excluded_carriers() -> None:
         "ZZ",
         "BA",
     )
+
+
+def test_cli_fx_uses_configured_rates(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        cli.AppConfig,
+        "from_env",
+        classmethod(
+            lambda cls: AppConfig(exchange_rates={("CNY", "USD"): Decimal("0.14")})
+        ),
+    )
+
+    result = runner.invoke(
+        cli.app,
+        ["fx", "2225", "--from", "CNY", "--to", "USD", "--output", "json"],
+    )
+
+    assert result.exit_code == 0
+    assert '"converted_amount": "311.50"' in result.stdout
 
 
 def test_run_watchlist_persists_snapshot(tmp_path: Path) -> None:

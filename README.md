@@ -14,6 +14,7 @@ ReverseFlightTickets 是一个用于反向票查询与订购流程辅助的 Pyth
 - 浏览器可见报价导入：提供携程/飞猪结果页油猴脚本，只读取已渲染航班卡片，导出 JSON/CSV 后可通过 CLI 或 Web UI 导入本项目比价、排序和保存快照。
 - 搜索扩展：支持销售地/币种组合、可配置日期弹性窗口和 stopover multi-city 候选。
 - 价格归一化：支持静态汇率表、Frankfurter 外部汇率源、本地汇率缓存、支付费和行李费估算，并在排序前计算可比价和“省钱金额 vs 风险”建议。
+- 汇率工具：支持 `rft fx`、REST API 和 Web UI 手动换算，复用同一套静态汇率或 Frankfurter 缓存配置。
 - 风险标记：支持人工核验、provider 未验证、split-ticket、自转机、退改签风险权重、hidden-city 默认排除等标签。
 - 快照与追踪：支持 SQLite 搜索快照、SQLite watchlist、一次性 watchlist run、简单定时循环、降价阈值告警和趋势摘要。
 - REST/Web UI：提供 FastAPI REST 服务和内置本地 Web UI。
@@ -173,6 +174,12 @@ rft serve --host 127.0.0.1 --port 8001
 
 Web UI 导入区的 `Snapshot` 默认勾选；保存后，同一航线、日期、乘客和舱位的后续搜索会把已保存的脚本报价与当前 provider 结果合并到 Offers 和 Recommendations。导入的浏览器报价会标记为 `manual_check_required` 和 `provider_unverified`，用于提醒这些数据来自页面可见信息，需要人工核验后再订购。
 
+手动换算汇率：
+
+```bash
+rft fx 2225 --from CNY --to USD
+```
+
 添加 watchlist：
 
 ```bash
@@ -203,7 +210,7 @@ rft watchlist schedule --interval-seconds 3600 --iterations 3
 rft serve --host 127.0.0.1 --port 8000
 ```
 
-打开 `http://127.0.0.1:8000/` 使用网页界面；REST 端点包括 `GET /health`、`GET /api/providers`、`POST /api/search` 和 `POST /api/import-browser`。
+打开 `http://127.0.0.1:8000/` 使用网页界面；REST 端点包括 `GET /health`、`GET /api/providers`、`POST /api/search`、`POST /api/import-browser` 和 `POST /api/currency/convert`。
 
 启动 MCP stdio server：
 

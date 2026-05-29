@@ -18,7 +18,11 @@ from reverse_flight_tickets.providers import (
     available_provider_metadata,
     providers_from_names,
 )
-from reverse_flight_tickets.pricing import CurrencyConverter, build_currency_converter
+from reverse_flight_tickets.pricing import (
+    CurrencyConverter,
+    build_currency_converter,
+    convert_currency_amount,
+)
 from reverse_flight_tickets.pricing.normalize import apply_comparable_pricing
 from reverse_flight_tickets.search import SearchOrchestrator
 from reverse_flight_tickets.search.filters import normalize_carrier_codes
@@ -59,6 +63,14 @@ class BrowserImportApiRequest(BaseModel):
     filename: str | None = None
     target_currency: str | None = None
     save_snapshot: bool = False
+
+
+class CurrencyConvertApiRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    amount: Decimal
+    from_currency: str
+    to_currency: str
 
 
 app = FastAPI(
@@ -181,6 +193,28 @@ async def import_browser(payload: BrowserImportApiRequest) -> dict[str, object]:
         )
     )
     return response
+
+
+@app.post("/api/currency/convert")
+async def convert_currency(payload: CurrencyConvertApiRequest) -> dict[str, object]:
+    config = AppConfig.from_env()
+    try:
+        result = convert_currency_amount(
+            payload.amount,
+            from_currency=payload.from_currency,
+            to_currency=payload.to_currency,
+            converter=build_currency_converter(
+                exchange_rates=config.exchange_rates,
+                exchange_rate_source=config.exchange_rate_source,
+                cache_path=config.exchange_rate_cache_path,
+                cache_ttl_seconds=config.exchange_rate_cache_ttl_seconds,
+                api_base_url=config.exchange_rate_api_base_url,
+                timeout_seconds=config.exchange_rate_timeout_seconds,
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return dict(result.to_dict())
 
 
 def _search_request(payload: SearchApiRequest, config: AppConfig) -> SearchRequest:
@@ -497,6 +531,16 @@ WEB_UI_HTML = r"""<!doctype html>
       background: var(--panel);
     }
 
+    .utility-panel {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 14px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+
     .subhead {
       grid-column: span 12;
       display: flex;
@@ -635,6 +679,7 @@ WEB_UI_HTML = r"""<!doctype html>
 
       form,
       .import-panel,
+      .utility-panel,
       .layout {
         grid-template-columns: 1fr;
       }
@@ -728,6 +773,25 @@ WEB_UI_HTML = r"""<!doctype html>
         <button class="secondary" id="clear-browser-import" type="button">Clear</button>
         <button id="browser-import-button" type="submit">Import offers</button>
       </div>
+    </form>
+    <form id="currency-form" class="utility-panel">
+      <div class="subhead">
+        <span>Currency Tool</span>
+        <span class="hint">Uses the configured static rates or exchange-rate provider.</span>
+      </div>
+      <label class="span-3">Amount
+        <input id="fx_amount" inputmode="decimal" value="1000">
+      </label>
+      <label class="span-2">From
+        <input id="fx_from" value="CNY">
+      </label>
+      <label class="span-2">To
+        <input id="fx_to" value="USD">
+      </label>
+      <div class="span-2 toolbar">
+        <button id="fx-button" type="submit">Convert</button>
+      </div>
+      <div class="span-3 status" id="fx_result">-</div>
     </form>
     <div class="layout">
       <section>
@@ -861,6 +925,34 @@ WEB_UI_HTML = r"""<!doctype html>
       } finally {
         button.disabled = false;
         button.textContent = "Import offers";
+      }
+    });
+
+    document.getElementById("currency-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = document.getElementById("fx-button");
+      const result = document.getElementById("fx_result");
+      button.disabled = true;
+      button.textContent = "Converting";
+      result.textContent = "-";
+      try {
+        const response = await fetch("/api/currency/convert", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            amount: document.getElementById("fx_amount").value,
+            from_currency: document.getElementById("fx_from").value,
+            to_currency: document.getElementById("fx_to").value
+          })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Conversion failed");
+        result.textContent = `${data.converted_amount} ${data.to_currency} @ ${data.rate}`;
+      } catch (error) {
+        result.textContent = error.message;
+      } finally {
+        button.disabled = false;
+        button.textContent = "Convert";
       }
     });
 

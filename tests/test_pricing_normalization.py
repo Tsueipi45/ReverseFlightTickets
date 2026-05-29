@@ -10,6 +10,7 @@ from reverse_flight_tickets.pricing import (
     CachedHttpRateConverter,
     StaticRateConverter,
     build_currency_converter,
+    convert_currency_amount,
     estimate_fee_breakdown,
 )
 from reverse_flight_tickets.pricing.normalize import apply_comparable_pricing
@@ -45,6 +46,19 @@ def test_apply_comparable_pricing_converts_currency_and_adds_estimated_fees() ->
 
     assert priced[0].currency == "CNY"
     assert priced[0].comparable_amount == Decimal("764.40")
+
+
+def test_convert_currency_amount_returns_rate_metadata() -> None:
+    result = convert_currency_amount(
+        Decimal("2225"),
+        from_currency="CNY",
+        to_currency="USD",
+        converter=StaticRateConverter(rates={("CNY", "USD"): Decimal("0.14")}),
+    )
+
+    assert result.converted_amount == Decimal("311.50")
+    assert result.rate == Decimal("0.140000")
+    assert result.to_dict()["from_currency"] == "CNY"
 
 
 def test_cached_http_rate_converter_uses_cached_rate(tmp_path: Path) -> None:

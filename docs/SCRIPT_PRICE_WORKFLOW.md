@@ -73,6 +73,12 @@ Web UI 中 `Snapshot` 默认勾选。保存后，同一航线、同一出发/返
 
 推荐区使用聚合后的 `aggregate_recommendations`。如果跨币种比较需要排序到同一目标币种，请在 `.env` 中配置静态汇率 `RFT_EXCHANGE_RATES`，或启用 `RFT_EXCHANGE_RATE_SOURCE=frankfurter`。缺少汇率时，外币历史报价仍会出现在聚合列表中，但不会被当作目标币种价格参与最低价推荐。
 
+Web UI 还提供 `Currency Tool`，可以直接用当前项目配置换算单笔金额。命令行也可以使用同一套配置：
+
+```bash
+rft fx 2225 --from CNY --to USD
+```
+
 CLI 导入：
 
 导入并输出表格：
