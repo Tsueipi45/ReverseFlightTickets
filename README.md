@@ -25,6 +25,8 @@ ReverseFlightTickets 是一个用于反向票查询与订购流程辅助的 Pyth
 
 项目任务单、架构设计树、数据源接入优先级和风控边界见 [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md)。
 当前完成状态快照见 [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md)。
+Provider、凭据和后续 API 接入说明见 [docs/PROVIDERS.md](docs/PROVIDERS.md)。
+当前阶段脚本采价与反向票操作流程见 [docs/SCRIPT_PRICE_WORKFLOW.md](docs/SCRIPT_PRICE_WORKFLOW.md)。
 
 ## 环境要求
 
@@ -79,8 +81,6 @@ rft search --origin PVG --destination LAX --departure-date 2026-10-01 --save-sna
 
 默认快照数据库为 `data/reverse_flight_tickets.sqlite3`，也可以用 `--db-url sqlite:///path/to/file.sqlite3` 覆盖。
 
-当前默认接入的是 Skyscanner、Trip.com、飞猪的人工核验 deep link provider，不抓取页面。Duffel sandbox provider 和 Amadeus Self-Service test API provider 已支持真实 API 查价。无凭据时会返回结构化错误，不会中断整个搜索。
-
 浏览器可见报价采集脚本位于 `src/userscripts/flight_offer_collector.user.js`。把它安装到 Tampermonkey/Violentmonkey 后，访问携程或飞猪机票结果页时会出现 `ReverseFlightTickets` 小面板，可选择：
 
 - `采集当前屏幕`：只采集当前可视区域内已经渲染的航班卡片。
@@ -88,8 +88,9 @@ rft search --origin PVG --destination LAX --departure-date 2026-10-01 --save-sna
 - `智能滚动采集`：手动触发后在当前结果列表内逐屏滚动、等待渲染、采集并去重，可随时停止。
 
 该脚本只读取浏览器页面 DOM，不自动登录、不处理验证码/滑块、不请求网站内部接口、不遍历日期/航线，也不会把 cookies、token 或报价发送到外部服务器。
+更完整的脚本采价、导入、反向票操作流程和 API 替换路径见 [docs/SCRIPT_PRICE_WORKFLOW.md](docs/SCRIPT_PRICE_WORKFLOW.md)。
 
-Duffel sandbox 会返回测试航司 Duffel Airways，IATA 代码为 `ZZ`。CLI 默认在本地过滤 `ZZ` 航班，避免把 sandbox 测试航班当成真实候选；需要调试原始 Duffel sandbox 结果时，可加 `--include-test-carriers`。也可以用 `--exclude-carrier BA --exclude-carrier UA` 追加本地排除的航司代码。
+当前默认 provider、API provider、research provider、凭据和测试航司过滤说明见 [docs/PROVIDERS.md](docs/PROVIDERS.md)。
 
 表格输出说明：
 
@@ -127,18 +128,6 @@ rft search --origin PVG --destination LAX --departure-date 2026-10-01 --return-d
 rft search --origin PVG --destination LAX --departure-date 2026-10-01 --stopover HND --provider duffel --output json
 ```
 
-只查询指定 provider：
-
-```bash
-rft search --origin PVG --destination LAX --departure-date 2026-10-01 --provider skyscanner --provider trip
-```
-
-包含研究型人工核验入口：
-
-```bash
-rft search --origin PVG --destination LAX --departure-date 2026-10-01 --include-research
-```
-
 保存 SQLite 快照到自定义数据库：
 
 ```bash
@@ -162,44 +151,6 @@ rft search --origin PVG --destination LAX --departure-date 2026-10-01 --save-sna
 
 ```bash
 rft search --json-input examples/search_request.json --output json
-```
-
-验证缺凭据 API provider 的错误隔离：
-
-```bash
-rft search --origin PVG --destination LAX --departure-date 2026-10-01 --provider duffel --output json
-```
-
-该命令在未配置 `DUFFEL_API_TOKEN` 时会返回 `ProviderNotConfigured`，但 CLI 不会崩溃。
-
-Duffel sandbox 查价：
-
-```bash
-rft search --origin LHR --destination JFK --departure-date 2026-10-01 --provider duffel
-```
-
-查看 Duffel sandbox 原始测试航司结果：
-
-```bash
-rft search --origin LHR --destination JFK --departure-date 2026-10-01 --provider duffel --include-test-carriers
-```
-
-往返 Duffel sandbox 查价：
-
-```bash
-rft search --origin LHR --destination JFK --departure-date 2026-10-01 --return-date 2026-10-15 --provider duffel --output json
-```
-
-Amadeus Self-Service test API 查价：
-
-```bash
-rft search --origin PVG --destination LAX --departure-date 2026-10-01 --return-date 2026-10-15 --provider amadeus --output json
-```
-
-本地排除指定航司：
-
-```bash
-rft search --origin LHR --destination JFK --departure-date 2026-10-01 --provider duffel --exclude-carrier BA
 ```
 
 导入油猴脚本导出的 JSON/CSV 并排序：
@@ -279,7 +230,7 @@ ReverseFlightTickets/
 │   └── workflows/
 │       └── ci.yml
 ├── src/
-│   └── reverse_flight_tickets/
+│   ├── reverse_flight_tickets/
 │       ├── api.py
 │       ├── cli.py
 │       ├── config.py
@@ -297,8 +248,10 @@ ReverseFlightTickets/
 │       └── flight_offer_collector.user.js
 ├── tests/
 ├── docs/
-│   └── IMPLEMENTATION_PLAN.md
-│   └── PROJECT_STATUS.md
+│   ├── IMPLEMENTATION_PLAN.md
+│   ├── PROJECT_STATUS.md
+│   ├── PROVIDERS.md
+│   └── SCRIPT_PRICE_WORKFLOW.md
 ├── pyproject.toml
 ├── README.md
 └── requirements.txt
@@ -318,27 +271,7 @@ GitHub Actions 会在 push 和 pull request 上运行同样的 lint、typecheck 
 
 ## API 凭据
 
-本项目不会提交真实 API 凭据；请只在本地 `.env` 中填写。仍需要你后续手动处理的变量：
-
-- `AMADEUS_CLIENT_ID`
-- `AMADEUS_CLIENT_SECRET`
-- `SKYSCANNER_API_KEY`
-- `TRIP_API_KEY`
-- `FLIGGY_APP_KEY`
-- `FLIGGY_APP_SECRET`
-
-`DUFFEL_API_TOKEN` 已可用于本地 Duffel sandbox 查询；`AMADEUS_CLIENT_ID` 和 `AMADEUS_CLIENT_SECRET` 已可用于 Amadeus Self-Service test API 查询。`.env` 不会进入版本库。
-
-可选运行配置：
-
-- `RFT_EXCHANGE_RATES`：静态汇率表，例如 `USD:CNY=7.20,CNY:USD=0.14`；静态值会优先于外部汇率源。
-- `RFT_EXCHANGE_RATE_SOURCE`：汇率来源，默认 `static`；可设为 `frankfurter` 启用外部汇率查询。
-- `RFT_EXCHANGE_RATE_CACHE_PATH`：外部汇率 JSON 缓存路径，默认 `data/exchange_rates_cache.json`。
-- `RFT_EXCHANGE_RATE_CACHE_TTL_SECONDS`：汇率缓存有效期，默认 `86400`。
-- `RFT_EXCHANGE_RATE_API_BASE_URL`：Frankfurter API base URL，默认 `https://api.frankfurter.dev/v2`。
-- `RFT_EXCHANGE_RATE_TIMEOUT_SECONDS`：外部汇率请求超时秒数，默认 `5`。
-- `RFT_PAYMENT_FEE_RATE`：支付手续费率，例如 `0.03`。
-- `RFT_BAGGAGE_FEE_AMOUNT`：每个报价统一加上的行李费估算金额。
+本项目不会提交真实 API 凭据；请只在本地 `.env` 中填写。可用变量、provider 状态和后续 API 接入步骤见 [docs/PROVIDERS.md](docs/PROVIDERS.md)。
 
 ## License
 

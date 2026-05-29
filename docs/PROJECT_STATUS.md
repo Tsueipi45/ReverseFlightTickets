@@ -1,6 +1,6 @@
 # ReverseFlightTickets 当前状态
 
-更新时间：2026-05-28
+更新时间：2026-05-29
 
 ## 已完成
 
@@ -10,6 +10,8 @@
 - Provider 抽象：统一 `FlightProvider` 协议、capability、provider context、并发查询、超时和失败隔离。
 - API provider：Duffel sandbox/API connector、Amadeus Self-Service test API connector。
 - Deep link provider：Skyscanner、Trip.com、飞猪、Google Flights research、Kiwi research。
+- 浏览器可见报价采集：携程/飞猪油猴脚本，支持当前屏幕、已渲染列表、智能滚动采集，导出 JSON/CSV。
+- 浏览器报价导入：`rft import-browser` 支持导入脚本 JSON/CSV，归一化为 `Offer` 后参与排序、推荐和 SQLite 快照。
 - 搜索扩展：销售地/币种组合、可配置日期弹性窗口、stopover multi-city 候选。
 - 结果处理：归一化、去重、指定航司过滤、基础排序、`lowest_price` / `lowest_risk` / `best_value` 推荐，以及“省钱金额 vs 风险”的排序结果。
 - 价格归一化：静态汇率表、可选 Frankfurter 外部汇率源、本地 JSON 汇率缓存、支付费率、行李费估算接入搜索链路，排序前计算可比价。
@@ -28,6 +30,7 @@
 - Multi-city 候选生成已支持显式 stopover；自动 stopover/路线发现仍未实现。
 - Watchlist 已有 SQLite 持久化、一次性 run 和本地 interval schedule；分布式后台调度仍未实现。
 - Skyscanner、Trip.com、飞猪仍是人工 deep link，没有接入官方/合作 API。
+- 浏览器脚本采价是当前携程/飞猪真实页面可见价格的阶段性方案；后续拿到官方/合作 API 后应接入 provider connector，并保留脚本作为人工核验/fallback。
 - 凭据加密和持久审计日志未实现。
 - 自动下单未实现；生产出票前仍必须明确 API 资质、支付、出票、退款和隐私责任边界。
 
@@ -43,6 +46,6 @@
 
 最近一次本地结果：
 
-- `pytest`：60 passed
+- `pytest`：63 passed
 - `ruff`：passed
 - `mypy`：passed
