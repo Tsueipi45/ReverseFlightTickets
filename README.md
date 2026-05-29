@@ -11,6 +11,7 @@ ReverseFlightTickets 是一个用于反向票查询与订购流程辅助的 Pyth
 - CLI 查价聚合：支持命令行参数和 JSON 请求输入。
 - 官方/API provider：已支持 Duffel sandbox 和 Amadeus Self-Service test API。
 - 人工核验 deep link：已支持 Skyscanner、Trip.com、飞猪、Google Flights research、Kiwi research。
+- 浏览器可见报价导入：提供携程/飞猪结果页油猴脚本，只读取已渲染航班卡片，导出 JSON/CSV 后可导入本项目比价、排序和保存快照。
 - 搜索扩展：支持销售地/币种组合、可配置日期弹性窗口和 stopover multi-city 候选。
 - 价格归一化：支持静态汇率表、Frankfurter 外部汇率源、本地汇率缓存、支付费和行李费估算，并在排序前计算可比价和“省钱金额 vs 风险”建议。
 - 风险标记：支持人工核验、provider 未验证、split-ticket、自转机、退改签风险权重、hidden-city 默认排除等标签。
@@ -79,6 +80,14 @@ rft search --origin PVG --destination LAX --departure-date 2026-10-01 --save-sna
 默认快照数据库为 `data/reverse_flight_tickets.sqlite3`，也可以用 `--db-url sqlite:///path/to/file.sqlite3` 覆盖。
 
 当前默认接入的是 Skyscanner、Trip.com、飞猪的人工核验 deep link provider，不抓取页面。Duffel sandbox provider 和 Amadeus Self-Service test API provider 已支持真实 API 查价。无凭据时会返回结构化错误，不会中断整个搜索。
+
+浏览器可见报价采集脚本位于 `src/userscripts/flight_offer_collector.user.js`。把它安装到 Tampermonkey/Violentmonkey 后，访问携程或飞猪机票结果页时会出现 `ReverseFlightTickets` 小面板，可选择：
+
+- `采集当前屏幕`：只采集当前可视区域内已经渲染的航班卡片。
+- `采集已渲染列表`：扫描页面 DOM 中已经存在的航班卡片，不限当前屏幕。
+- `智能滚动采集`：手动触发后在当前结果列表内逐屏滚动、等待渲染、采集并去重，可随时停止。
+
+该脚本只读取浏览器页面 DOM，不自动登录、不处理验证码/滑块、不请求网站内部接口、不遍历日期/航线，也不会把 cookies、token 或报价发送到外部服务器。
 
 Duffel sandbox 会返回测试航司 Duffel Airways，IATA 代码为 `ZZ`。CLI 默认在本地过滤 `ZZ` 航班，避免把 sandbox 测试航班当成真实候选；需要调试原始 Duffel sandbox 结果时，可加 `--include-test-carriers`。也可以用 `--exclude-carrier BA --exclude-carrier UA` 追加本地排除的航司代码。
 
@@ -193,6 +202,20 @@ rft search --origin PVG --destination LAX --departure-date 2026-10-01 --return-d
 rft search --origin LHR --destination JFK --departure-date 2026-10-01 --provider duffel --exclude-carrier BA
 ```
 
+导入油猴脚本导出的 JSON/CSV 并排序：
+
+```bash
+rft import-browser path/to/rft-ctrip-2026-05-29.json --output table
+```
+
+导入并保存为 SQLite 快照：
+
+```bash
+rft import-browser path/to/rft-fliggy-2026-05-29.csv --save-snapshot
+```
+
+导入的浏览器报价会标记为 `manual_check_required` 和 `provider_unverified`，用于提醒这些数据来自页面可见信息，需要人工核验后再订购。
+
 添加 watchlist：
 
 ```bash
@@ -245,6 +268,7 @@ rft-mcp
 - 本地持久化层只接受 SQLite URL，不接受网络数据库 URL。
 - 外部汇率源只允许 HTTPS base URL，静态汇率会优先于外部请求。
 - Web UI 使用 DOM 文本节点渲染结果，避免把 provider 返回字段当作 HTML 执行。
+- 油猴脚本只采集当前浏览器页面已经渲染的可见/列表 DOM；智能滚动模式仍限定在当前搜索结果列表，不做自动登录、验证码处理、接口调用、批量日期/航线遍历或外部上传。
 - 自动下单仍未实现；所有购买入口仍是人工核验或 API provider 返回的报价信息。
 
 ## 项目结构
@@ -266,7 +290,11 @@ ReverseFlightTickets/
 │       ├── pricing/
 │       ├── booking/
 │       ├── storage/
-│       └── monitoring/
+│       ├── monitoring/
+│       └── importers/
+│           └── browser_exports.py
+│   └── userscripts/
+│       └── flight_offer_collector.user.js
 ├── tests/
 ├── docs/
 │   └── IMPLEMENTATION_PLAN.md

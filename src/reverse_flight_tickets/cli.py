@@ -13,6 +13,7 @@ import typer
 
 from reverse_flight_tickets.config import AppConfig
 from reverse_flight_tickets.domain import SearchRequest
+from reverse_flight_tickets.importers import BrowserExportError, import_browser_export
 from reverse_flight_tickets.monitoring import (
     PriceDropAlert,
     WatchlistItem,
@@ -162,6 +163,57 @@ def search(
             db_url=db_url,
         )
     )
+    if output == "json":
+        typer.echo(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    elif output == "table":
+        typer.echo(_format_table(result))
+    else:
+        raise typer.BadParameter("output must be table or json")
+
+
+@app.command("import-browser")
+def import_browser(
+    export_path: Annotated[
+        Path,
+        typer.Argument(help="Path to a JSON or CSV export from the userscript"),
+    ],
+    target_currency: Annotated[
+        str | None,
+        typer.Option(
+            "--target-currency",
+            help="Comparable output currency. Defaults to the export/request currency.",
+        ),
+    ] = None,
+    output: Annotated[
+        str,
+        typer.Option("--output", help="Output format: table or json"),
+    ] = "table",
+    save_snapshot: Annotated[bool, typer.Option("--save-snapshot")] = False,
+    db_url: Annotated[
+        str | None,
+        typer.Option("--db-url", help="SQLAlchemy database URL for snapshots"),
+    ] = None,
+) -> None:
+    """Import visible-card browser exports for comparison, ranking, and snapshots."""
+
+    config = AppConfig.from_env()
+    try:
+        result, snapshot_id = import_browser_export(
+            export_path,
+            target_currency=target_currency,
+            currency_converter=_currency_converter_from_config(config),
+            payment_fee_rate=config.payment_fee_rate,
+            baggage_fee_amount=config.baggage_fee_amount,
+            save_snapshot=save_snapshot,
+            db_url=db_url or config.database_url,
+        )
+    except BrowserExportError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if snapshot_id:
+        result = result.model_copy(
+            update={"warnings": result.warnings + (f"snapshot saved: {snapshot_id}",)}
+        )
     if output == "json":
         typer.echo(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     elif output == "table":
