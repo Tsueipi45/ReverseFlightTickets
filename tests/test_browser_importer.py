@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from reverse_flight_tickets.importers import import_browser_export
+from reverse_flight_tickets.importers import import_browser_export, import_browser_export_text
 from reverse_flight_tickets.storage import SqliteSearchRepository
 
 
@@ -127,3 +127,50 @@ def test_import_browser_export_reads_csv(tmp_path: Path) -> None:
     assert result.request.origin == "SHA"
     assert result.offers[0].total_amount == 888
     assert result.offers[0].segments[0].flight_number == "5001"
+
+
+def test_import_browser_export_falls_back_to_fliggy_search_journey_url() -> None:
+    page_url = (
+        "https://sijipiao.fliggy.com/ie/flight_search_result.htm?"
+        "searchJourney=%5B%7B%22depCityCode%22%3A%22SHA%22%2C%22arrCityCode%22%3A%22TPE%22%2C"
+        "%22depDate%22%3A%222026-06-02%22%7D%2C%7B%22depCityCode%22%3A%22TPE%22%2C"
+        "%22arrCityCode%22%3A%22SHA%22%2C%22depDate%22%3A%222026-06-12%22%7D%5D"
+        "&childPassengerNum=0&infantPassengerNum=0&tripType=1"
+    )
+    content = json.dumps(
+        {
+            "schema_version": "rft-browser-offers/v1",
+            "source": "fliggy",
+            "page_url": page_url,
+            "request": {
+                "allowed_markets": ["CN"],
+                "allowed_currencies": ["CNY"],
+                "passenger_count": 1,
+                "cabin": "economy",
+                "passengers": {"adults": 1, "children": 0, "infants": 0},
+            },
+            "offers": [
+                {
+                    "provider": "fliggy",
+                    "amount": "2225",
+                    "currency": "CNY",
+                    "airline": "春秋航空",
+                    "flight_numbers": ["9C8951", "T210"],
+                    "departure_time": "08:15",
+                    "arrival_time": "10:15",
+                    "link": page_url,
+                }
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+    result, _snapshot_id = import_browser_export_text(content, filename="fliggy.json")
+
+    assert result.request.origin == "SHA"
+    assert result.request.destination == "TPE"
+    assert result.request.departure_date.isoformat() == "2026-06-02"
+    assert result.request.return_date is not None
+    assert result.request.return_date.isoformat() == "2026-06-12"
+    assert result.offers[0].segments[0].origin == "SHA"
+    assert result.offers[0].segments[0].destination == "TPE"

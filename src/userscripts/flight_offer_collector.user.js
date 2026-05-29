@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         ReverseFlightTickets 机票报价采集
 // @namespace    reverse-flight-tickets
-// @version      0.2.0
+// @version      0.2.1
 // @description  读取携程/飞猪搜索结果页已渲染航班卡片，可手动采集当前屏幕、已渲染列表或智能滚动当前列表，并导出 JSON/CSV。
 // @match        https://flights.ctrip.com/online/list/*
 // @match        https://sijipiao.fliggy.com/ie/flight_search_result.htm*
 // @match        https://sjipiao.fliggy.com/flight_search_result.htm*
 // @match        https://*.fliggy.com/*flight_search_result.htm*
 // @grant        GM_setClipboard
+// @grant        GM_download
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -432,18 +433,29 @@
     }
 
     if (SOURCE === "fliggy") {
-      request.origin = normalizeCode(url.searchParams.get("depCity"));
-      request.destination = normalizeCode(url.searchParams.get("arrCity"));
-      request.departure_date = url.searchParams.get("depDate") || undefined;
+      const journey = parseFliggyJourney(url.searchParams.get("searchJourney"));
+      const firstSegment = journey[0] || {};
+      const returnSegment = journey[1] || {};
+      request.origin = normalizeCode(url.searchParams.get("depCity") || firstSegment.depCityCode);
+      request.destination = normalizeCode(url.searchParams.get("arrCity") || firstSegment.arrCityCode);
+      request.departure_date = url.searchParams.get("depDate") || firstSegment.depDate || undefined;
       const tripType = url.searchParams.get("tripType");
-      const returnDate = url.searchParams.get("retDate") || url.searchParams.get("arrDate");
-      if (tripType === "1" && returnDate) request.return_date = returnDate;
-      const adult = parseInt(url.searchParams.get("adultNum") || "1", 10);
-      const child = parseInt(url.searchParams.get("childNum") || "0", 10);
+      const returnDate =
+        url.searchParams.get("retDate") || url.searchParams.get("arrDate") || returnSegment.depDate;
+      if ((tripType === "1" || journey.length > 1) && returnDate) request.return_date = returnDate;
+      const adult = parseInt(
+        url.searchParams.get("adultNum") || url.searchParams.get("adultPassengerNum") || "1",
+        10,
+      );
+      const child = parseInt(
+        url.searchParams.get("childNum") || url.searchParams.get("childPassengerNum") || "0",
+        10,
+      );
+      const infant = parseInt(url.searchParams.get("infantPassengerNum") || "0", 10);
       request.passengers = {
         adults: Number.isFinite(adult) ? adult : 1,
         children: Number.isFinite(child) ? child : 0,
-        infants: 0,
+        infants: Number.isFinite(infant) ? infant : 0,
       };
       request.passenger_count = request.passengers.adults;
     }
@@ -464,6 +476,21 @@
     if (!value) return undefined;
     const trimmed = value.trim();
     return trimmed ? trimmed.toUpperCase() : undefined;
+  }
+
+  function parseFliggyJourney(value) {
+    if (!value) return [];
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_error) {
+      try {
+        const parsed = JSON.parse(decodeURIComponent(value));
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (_innerError) {
+        return [];
+      }
+    }
   }
 
   function collectCards(options = {}) {
@@ -792,6 +819,24 @@
   function downloadText(text, filename, type) {
     if (!latestPayload) return;
     const blob = new Blob(["\ufeff", text], { type });
+    if (typeof GM_download === "function") {
+      const reader = new FileReader();
+      reader.onload = () => {
+        GM_download({
+          url: String(reader.result),
+          name: filename,
+          saveAs: true,
+          onerror: () => downloadBlob(blob, filename),
+        });
+      };
+      reader.onerror = () => downloadBlob(blob, filename);
+      reader.readAsDataURL(blob);
+      return;
+    }
+    downloadBlob(blob, filename);
+  }
+
+  function downloadBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;

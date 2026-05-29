@@ -8,6 +8,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Iterable, Mapping
+from urllib.parse import parse_qs, unquote, urlparse
 
 from reverse_flight_tickets.domain import (
     Layover,
@@ -216,13 +217,28 @@ def _request_from_payload(payload: Mapping[str, Any]) -> SearchRequest:
     if not isinstance(request_data, Mapping):
         request_data = {}
     first_offer = _first_offer(payload)
+    page_request = _request_from_page_url(payload.get("page_url"))
     data = {
-        "origin": request_data.get("origin") or first_offer.get("origin"),
-        "destination": request_data.get("destination") or first_offer.get("destination"),
-        "departure_date": request_data.get("departure_date") or first_offer.get("departure_date"),
-        "return_date": request_data.get("return_date") or first_offer.get("return_date"),
-        "passengers": request_data.get("passengers"),
-        "passenger_count": request_data.get("passenger_count") or 1,
+        "origin": request_data.get("origin") or first_offer.get("origin") or page_request.get("origin"),
+        "destination": (
+            request_data.get("destination")
+            or first_offer.get("destination")
+            or page_request.get("destination")
+        ),
+        "departure_date": (
+            request_data.get("departure_date")
+            or first_offer.get("departure_date")
+            or page_request.get("departure_date")
+        ),
+        "return_date": (
+            request_data.get("return_date")
+            or first_offer.get("return_date")
+            or page_request.get("return_date")
+        ),
+        "passengers": request_data.get("passengers") or page_request.get("passengers"),
+        "passenger_count": (
+            request_data.get("passenger_count") or page_request.get("passenger_count") or 1
+        ),
         "cabin": request_data.get("cabin") or "economy",
         "allowed_markets": request_data.get("allowed_markets") or ("CN",),
         "allowed_currencies": (
@@ -236,6 +252,96 @@ def _request_from_payload(payload: Mapping[str, Any]) -> SearchRequest:
         return SearchRequest.from_mapping(data)
     except Exception as exc:
         raise BrowserExportError(f"cannot build SearchRequest from browser export: {exc}") from exc
+
+
+def _request_from_page_url(value: object) -> dict[str, Any]:
+    if not isinstance(value, str) or not value:
+        return {}
+    parsed = urlparse(value)
+    query = parse_qs(parsed.query)
+    if "fliggy.com" in parsed.netloc:
+        return _fliggy_request_from_query(query)
+    if "ctrip.com" in parsed.netloc:
+        return _ctrip_request_from_url(parsed.path, query)
+    return {}
+
+
+def _fliggy_request_from_query(query: Mapping[str, list[str]]) -> dict[str, Any]:
+    request: dict[str, Any] = {}
+    journey = _fliggy_search_journey(_query_value(query, "searchJourney"))
+    first_segment = journey[0] if journey else {}
+    return_segment = journey[1] if len(journey) > 1 else {}
+
+    request["origin"] = _query_value(query, "depCity") or first_segment.get("depCityCode")
+    request["destination"] = _query_value(query, "arrCity") or first_segment.get("arrCityCode")
+    request["departure_date"] = _query_value(query, "depDate") or first_segment.get("depDate")
+    return_date = (
+        _query_value(query, "retDate")
+        or _query_value(query, "arrDate")
+        or return_segment.get("depDate")
+    )
+    if return_date:
+        request["return_date"] = return_date
+
+    adults = _int_or_default(
+        _query_value(query, "adultNum") or _query_value(query, "adultPassengerNum"),
+        1,
+    )
+    children = _int_or_default(
+        _query_value(query, "childNum") or _query_value(query, "childPassengerNum"),
+        0,
+    )
+    infants = _int_or_default(_query_value(query, "infantPassengerNum"), 0)
+    request["passengers"] = {"adults": adults, "children": children, "infants": infants}
+    request["passenger_count"] = adults
+    return {key: item for key, item in request.items() if item not in (None, "")}
+
+
+def _fliggy_search_journey(value: str | None) -> list[dict[str, Any]]:
+    if not value:
+        return []
+    candidates = [value, unquote(value)]
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, list):
+            return [item for item in parsed if isinstance(item, dict)]
+    return []
+
+
+def _ctrip_request_from_url(path: str, query: Mapping[str, list[str]]) -> dict[str, Any]:
+    request: dict[str, Any] = {}
+    parts = path.rstrip("/").split("/")
+    route = parts[-1] if parts else ""
+    route_parts = route.split("-")
+    if len(route_parts) >= 3:
+        request["origin"] = route_parts[-2].upper()
+        request["destination"] = route_parts[-1].upper()
+    dates = (_query_value(query, "depdate") or "").split("_")
+    if dates and dates[0]:
+        request["departure_date"] = dates[0]
+    if len(dates) > 1 and dates[1]:
+        request["return_date"] = dates[1]
+    adults = _int_or_default(_query_value(query, "adult"), 1)
+    children = _int_or_default(_query_value(query, "child"), 0)
+    infants = _int_or_default(_query_value(query, "infant"), 0)
+    request["passengers"] = {"adults": adults, "children": children, "infants": infants}
+    request["passenger_count"] = adults
+    return {key: item for key, item in request.items() if item not in (None, "")}
+
+
+def _query_value(query: Mapping[str, list[str]], key: str) -> str | None:
+    values = query.get(key)
+    return values[0] if values else None
+
+
+def _int_or_default(value: object, default: int) -> int:
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return default
 
 
 def _first_offer(payload: Mapping[str, Any]) -> Mapping[str, Any]:
