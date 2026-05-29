@@ -11,7 +11,7 @@
 1. 明确同一行程的查询条件：出发地、目的地、日期、乘客、舱位。
 2. 在不同页面或销售入口人工打开同一条件的搜索结果。
 3. 用脚本采集页面已经渲染出的真实可见报价。
-4. 导出 JSON/CSV，导入项目统一模型。
+4. 导出 JSON/CSV，通过 CLI 或 Web UI 导入项目统一模型。
 5. 在本地完成排序、风险标记、快照记录和后续对比。
 6. 订购前仍由人打开原始链接核验价格、退改签、行李、中转和出票条件。
 
@@ -55,6 +55,21 @@
 推荐优先使用 JSON，因为它会保留 `collection_mode`、`collection`、`page_url`、`captured_at`、`request` 和每条报价的结构化字段。
 
 ## 导入与比价
+
+Web UI 导入：
+
+1. 启动本地服务：
+
+   ```bash
+   rft serve --host 127.0.0.1 --port 8001
+   ```
+
+2. 打开 `http://127.0.0.1:8001/`。
+3. 在 `Import Browser Offers` 区块选择导出的 JSON/CSV 文件，或直接粘贴导出内容。
+4. 可选填写目标币种并勾选 `Snapshot`。
+5. 点击 `Import offers`，导入结果会显示在同一个 Offers 表和 Recommendations 区块。
+
+CLI 导入：
 
 导入并输出表格：
 

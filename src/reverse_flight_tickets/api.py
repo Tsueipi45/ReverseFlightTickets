@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from reverse_flight_tickets import __version__
 from reverse_flight_tickets.config import AppConfig
 from reverse_flight_tickets.domain import SearchRequest
+from reverse_flight_tickets.importers import BrowserExportError, import_browser_export_text
 from reverse_flight_tickets.providers import (
     ProviderContext,
     available_provider_metadata,
@@ -45,6 +46,15 @@ class SearchApiRequest(BaseModel):
     include_research: bool = False
     exclude_carriers: tuple[str, ...] = ()
     include_test_carriers: bool = False
+    save_snapshot: bool = False
+
+
+class BrowserImportApiRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    content: str = Field(min_length=1)
+    filename: str | None = None
+    target_currency: str | None = None
     save_snapshot: bool = False
 
 
@@ -105,6 +115,35 @@ async def search(payload: SearchApiRequest) -> dict[str, object]:
     if payload.save_snapshot:
         repository = SqliteSearchRepository(config.database_url)
         snapshot_id = repository.save_search_snapshot(SearchSnapshot.from_search_result(result))
+
+    response = result.to_dict()
+    response["snapshot_id"] = snapshot_id
+    return response
+
+
+@app.post("/api/import-browser")
+async def import_browser(payload: BrowserImportApiRequest) -> dict[str, object]:
+    config = AppConfig.from_env()
+    try:
+        result, snapshot_id = import_browser_export_text(
+            payload.content,
+            filename=payload.filename,
+            target_currency=payload.target_currency,
+            currency_converter=build_currency_converter(
+                exchange_rates=config.exchange_rates,
+                exchange_rate_source=config.exchange_rate_source,
+                cache_path=config.exchange_rate_cache_path,
+                cache_ttl_seconds=config.exchange_rate_cache_ttl_seconds,
+                api_base_url=config.exchange_rate_api_base_url,
+                timeout_seconds=config.exchange_rate_timeout_seconds,
+            ),
+            payment_fee_rate=config.payment_fee_rate,
+            baggage_fee_amount=config.baggage_fee_amount,
+            save_snapshot=payload.save_snapshot,
+            db_url=config.database_url,
+        )
+    except BrowserExportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     response = result.to_dict()
     response["snapshot_id"] = snapshot_id
@@ -216,7 +255,8 @@ WEB_UI_HTML = r"""<!doctype html>
     }
 
     input,
-    select {
+    select,
+    textarea {
       min-height: 40px;
       width: 100%;
       border: 1px solid var(--line);
@@ -225,6 +265,14 @@ WEB_UI_HTML = r"""<!doctype html>
       font: inherit;
       color: var(--ink);
       background: #ffffff;
+    }
+
+    textarea {
+      min-height: 150px;
+      resize: vertical;
+      font-family: Consolas, Menlo, monospace;
+      font-size: 13px;
+      line-height: 1.4;
     }
 
     button {
@@ -283,6 +331,43 @@ WEB_UI_HTML = r"""<!doctype html>
       display: flex;
       justify-content: flex-end;
       align-items: end;
+      gap: 8px;
+    }
+
+    .import-panel {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 14px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .subhead {
+      grid-column: span 12;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .hint {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+    }
+
+    .secondary {
+      border-color: var(--line);
+      color: var(--accent-dark);
+      background: #ffffff;
+    }
+
+    .secondary:hover {
+      background: #f0f6f7;
     }
 
     .layout {
@@ -396,6 +481,7 @@ WEB_UI_HTML = r"""<!doctype html>
       }
 
       form,
+      .import-panel,
       .layout {
         grid-template-columns: 1fr;
       }
@@ -468,6 +554,28 @@ WEB_UI_HTML = r"""<!doctype html>
         <button id="search-button" type="submit">Search</button>
       </div>
     </form>
+    <form id="browser-import-form" class="import-panel">
+      <div class="subhead">
+        <span>Import Browser Offers</span>
+        <span class="hint">Paste or load the JSON/CSV exported by the userscript.</span>
+      </div>
+      <label class="span-6">Export file
+        <input id="browser_file" type="file" accept=".json,.csv,application/json,text/csv">
+      </label>
+      <label class="span-3">Target currency
+        <input id="browser_target_currency" placeholder="CNY">
+      </label>
+      <div class="span-3 toggles">
+        <label class="choice"><input id="browser_save_snapshot" type="checkbox">Snapshot</label>
+      </div>
+      <label class="span-12">Export content
+        <textarea id="browser_content" placeholder="Paste userscript JSON or CSV here"></textarea>
+      </label>
+      <div class="span-12 toolbar">
+        <button class="secondary" id="clear-browser-import" type="button">Clear</button>
+        <button id="browser-import-button" type="submit">Import offers</button>
+      </div>
+    </form>
     <div class="layout">
       <section>
         <div class="section-title">
@@ -483,7 +591,7 @@ WEB_UI_HTML = r"""<!doctype html>
     </div>
   </main>
   <script>
-    const state = { providers: [] };
+    const state = { providers: [], browserFilename: null };
 
     const csv = (value) => value.split(",").map((part) => part.trim()).filter(Boolean);
     const text = (value) => value === null || value === undefined || value === "" ? "-" : String(value);
@@ -549,18 +657,81 @@ WEB_UI_HTML = r"""<!doctype html>
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || "Search failed");
         renderResults(data);
+        renderStatus(data);
       } catch (error) {
-        const results = document.getElementById("results");
-        results.innerHTML = "";
-        const errorBox = document.createElement("div");
-        errorBox.className = "error";
-        errorBox.textContent = error.message;
-        results.appendChild(errorBox);
+        renderError(error.message);
       } finally {
         button.disabled = false;
         button.textContent = "Search";
       }
     });
+
+    document.getElementById("browser_file").addEventListener("change", async (event) => {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      state.browserFilename = file.name;
+      document.getElementById("browser_content").value = await file.text();
+    });
+
+    document.getElementById("clear-browser-import").addEventListener("click", () => {
+      state.browserFilename = null;
+      document.getElementById("browser_file").value = "";
+      document.getElementById("browser_content").value = "";
+    });
+
+    document.getElementById("browser-import-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = document.getElementById("browser-import-button");
+      button.disabled = true;
+      button.textContent = "Importing";
+      try {
+        const payload = {
+          content: document.getElementById("browser_content").value,
+          filename: state.browserFilename,
+          target_currency: document.getElementById("browser_target_currency").value || null,
+          save_snapshot: document.getElementById("browser_save_snapshot").checked
+        };
+        const response = await fetch("/api/import-browser", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Import failed");
+        renderResults(data);
+        renderStatus(data);
+      } catch (error) {
+        renderError(error.message);
+      } finally {
+        button.disabled = false;
+        button.textContent = "Import offers";
+      }
+    });
+
+    function renderError(message) {
+      document.getElementById("offer-count").textContent = "0";
+      const results = document.getElementById("results");
+      results.innerHTML = "";
+      const errorBox = document.createElement("div");
+      errorBox.className = "error";
+      errorBox.textContent = message;
+      results.appendChild(errorBox);
+      document.getElementById("recommendations").innerHTML = "<div class='empty'>No data.</div>";
+    }
+
+    function renderStatus(data) {
+      const parts = [];
+      if (data.snapshot_id) parts.push(`snapshot ${data.snapshot_id}`);
+      if (data.request) {
+        parts.push(`${data.request.origin} -> ${data.request.destination}`);
+      }
+      (data.warnings || []).forEach((warning) => parts.push(warning));
+      if (!parts.length) return;
+      const status = document.createElement("div");
+      status.className = "empty";
+      status.textContent = parts.join(" | ");
+      document.getElementById("results").appendChild(status);
+    }
 
     function renderResults(data) {
       document.getElementById("offer-count").textContent = `${data.offers.length}`;

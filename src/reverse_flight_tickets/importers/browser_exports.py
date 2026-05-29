@@ -43,6 +43,54 @@ def import_browser_export(
     """Load a Tampermonkey JSON/CSV export and optionally persist it as a snapshot."""
 
     payload = _load_export(Path(path))
+    return import_browser_export_payload(
+        payload,
+        target_currency=target_currency,
+        currency_converter=currency_converter,
+        payment_fee_rate=payment_fee_rate,
+        baggage_fee_amount=baggage_fee_amount,
+        save_snapshot=save_snapshot,
+        db_url=db_url,
+    )
+
+
+def import_browser_export_text(
+    content: str,
+    *,
+    filename: str | None = None,
+    target_currency: str | None = None,
+    currency_converter: CurrencyConverter | None = None,
+    payment_fee_rate: Decimal = Decimal("0"),
+    baggage_fee_amount: Decimal = Decimal("0"),
+    save_snapshot: bool = False,
+    db_url: str | None = None,
+) -> tuple[SearchRunResult, str | None]:
+    """Load a browser export from pasted/uploaded text content."""
+
+    payload = _load_export_text(content, filename=filename)
+    return import_browser_export_payload(
+        payload,
+        target_currency=target_currency,
+        currency_converter=currency_converter,
+        payment_fee_rate=payment_fee_rate,
+        baggage_fee_amount=baggage_fee_amount,
+        save_snapshot=save_snapshot,
+        db_url=db_url,
+    )
+
+
+def import_browser_export_payload(
+    payload: Mapping[str, Any],
+    *,
+    target_currency: str | None = None,
+    currency_converter: CurrencyConverter | None = None,
+    payment_fee_rate: Decimal = Decimal("0"),
+    baggage_fee_amount: Decimal = Decimal("0"),
+    save_snapshot: bool = False,
+    db_url: str | None = None,
+) -> tuple[SearchRunResult, str | None]:
+    """Import an already parsed browser export payload."""
+
     request = _request_from_payload(payload)
     offers = tuple(_offer_from_mapping(item, payload=payload, request=request) for item in _offer_rows(payload))
     target = (target_currency or request.allowed_currencies[0]).upper()
@@ -92,9 +140,37 @@ def _load_export(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _load_export_text(content: str, *, filename: str | None = None) -> dict[str, Any]:
+    text = content.lstrip("\ufeff").strip()
+    if not text:
+        raise BrowserExportError("browser export content is empty")
+    suffix = Path(filename or "").suffix.lower()
+    if suffix == ".csv" or _looks_like_csv(text):
+        return _load_csv_text(text)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise BrowserExportError(f"invalid browser export JSON: {exc}") from exc
+    if not isinstance(data, Mapping):
+        raise BrowserExportError("browser export JSON must be an object")
+    payload = dict(data)
+    if not isinstance(payload.get("offers"), list):
+        raise BrowserExportError("browser export JSON must include an offers list")
+    return payload
+
+
 def _load_csv(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.DictReader(handle))
+    return _payload_from_csv_rows(rows)
+
+
+def _load_csv_text(content: str) -> dict[str, Any]:
+    rows = list(csv.DictReader(content.splitlines()))
+    return _payload_from_csv_rows(rows)
+
+
+def _payload_from_csv_rows(rows: list[dict[str, str]]) -> dict[str, Any]:
     if not rows:
         raise BrowserExportError("browser export CSV does not include any offers")
 
@@ -109,7 +185,9 @@ def _load_csv(path: Path) -> dict[str, Any]:
     }
     offers: list[dict[str, Any]] = []
     for row in rows:
-        offer = {key: value for key, value in row.items() if value not in (None, "")}
+        offer: dict[str, Any] = {
+            key: value for key, value in row.items() if value not in (None, "")
+        }
         if "flight_numbers" in offer:
             offer["flight_numbers"] = tuple(str(offer["flight_numbers"]).split())
         if "amount" in offer or "currency" in offer:
@@ -125,6 +203,12 @@ def _load_csv(path: Path) -> dict[str, Any]:
         "request": request,
         "offers": offers,
     }
+
+
+def _looks_like_csv(text: str) -> bool:
+    first_line = text.splitlines()[0] if text.splitlines() else ""
+    headers = {part.strip() for part in first_line.split(",")}
+    return {"origin", "destination", "amount"}.issubset(headers)
 
 
 def _request_from_payload(payload: Mapping[str, Any]) -> SearchRequest:

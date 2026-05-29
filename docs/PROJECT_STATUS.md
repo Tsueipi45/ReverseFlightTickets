@@ -11,12 +11,12 @@
 - API provider：Duffel sandbox/API connector、Amadeus Self-Service test API connector。
 - Deep link provider：Skyscanner、Trip.com、飞猪、Google Flights research、Kiwi research。
 - 浏览器可见报价采集：携程/飞猪油猴脚本，支持当前屏幕、已渲染列表、智能滚动采集，导出 JSON/CSV。
-- 浏览器报价导入：`rft import-browser` 支持导入脚本 JSON/CSV，归一化为 `Offer` 后参与排序、推荐和 SQLite 快照。
+- 浏览器报价导入：`rft import-browser` 和 Web UI `Import Browser Offers` 支持导入脚本 JSON/CSV，归一化为 `Offer` 后参与排序、推荐和 SQLite 快照。
 - 搜索扩展：销售地/币种组合、可配置日期弹性窗口、stopover multi-city 候选。
 - 结果处理：归一化、去重、指定航司过滤、基础排序、`lowest_price` / `lowest_risk` / `best_value` 推荐，以及“省钱金额 vs 风险”的排序结果。
 - 价格归一化：静态汇率表、可选 Frankfurter 外部汇率源、本地 JSON 汇率缓存、支付费率、行李费估算接入搜索链路，排序前计算可比价。
 - 风险策略：默认标记 hidden-city 排除；统一处理 split-ticket、self-transfer 和退改签规则风险权重。
-- 平台化基础：FastAPI REST 服务、`/api/search`、`/api/providers`、`/health`，以及内置本地 Web UI。
+- 平台化基础：FastAPI REST 服务、`/api/search`、`/api/import-browser`、`/api/providers`、`/health`，以及内置本地 Web UI。
 - MCP server：提供 stdio JSON-RPC MCP 服务，包含 `list_providers` 和 `search_flights` 工具。
 - 安全加固：API 请求禁止额外字段和客户端覆盖数据库 URL；SQLite 仓库限制本地 SQLite URL；外部汇率源强制 HTTPS；MCP 支持 Content-Length framing；Web UI 结果渲染避免直接拼接未信任 HTML。
 - 持久化：SQLite 搜索快照保存和读取。
@@ -46,6 +46,6 @@
 
 最近一次本地结果：
 
-- `pytest`：63 passed
+- `pytest`：67 passed
 - `ruff`：passed
 - `mypy`：passed

@@ -11,7 +11,7 @@ ReverseFlightTickets 是一个用于反向票查询与订购流程辅助的 Pyth
 - CLI 查价聚合：支持命令行参数和 JSON 请求输入。
 - 官方/API provider：已支持 Duffel sandbox 和 Amadeus Self-Service test API。
 - 人工核验 deep link：已支持 Skyscanner、Trip.com、飞猪、Google Flights research、Kiwi research。
-- 浏览器可见报价导入：提供携程/飞猪结果页油猴脚本，只读取已渲染航班卡片，导出 JSON/CSV 后可导入本项目比价、排序和保存快照。
+- 浏览器可见报价导入：提供携程/飞猪结果页油猴脚本，只读取已渲染航班卡片，导出 JSON/CSV 后可通过 CLI 或 Web UI 导入本项目比价、排序和保存快照。
 - 搜索扩展：支持销售地/币种组合、可配置日期弹性窗口和 stopover multi-city 候选。
 - 价格归一化：支持静态汇率表、Frankfurter 外部汇率源、本地汇率缓存、支付费和行李费估算，并在排序前计算可比价和“省钱金额 vs 风险”建议。
 - 风险标记：支持人工核验、provider 未验证、split-ticket、自转机、退改签风险权重、hidden-city 默认排除等标签。
@@ -165,6 +165,12 @@ rft import-browser path/to/rft-ctrip-2026-05-29.json --output table
 rft import-browser path/to/rft-fliggy-2026-05-29.csv --save-snapshot
 ```
 
+也可以启动 Web UI 后，在 `Import Browser Offers` 区块上传或粘贴油猴导出的 JSON/CSV：
+
+```bash
+rft serve --host 127.0.0.1 --port 8001
+```
+
 导入的浏览器报价会标记为 `manual_check_required` 和 `provider_unverified`，用于提醒这些数据来自页面可见信息，需要人工核验后再订购。
 
 添加 watchlist：
@@ -197,7 +203,7 @@ rft watchlist schedule --interval-seconds 3600 --iterations 3
 rft serve --host 127.0.0.1 --port 8000
 ```
 
-打开 `http://127.0.0.1:8000/` 使用网页界面；REST 端点包括 `GET /health`、`GET /api/providers` 和 `POST /api/search`。
+打开 `http://127.0.0.1:8000/` 使用网页界面；REST 端点包括 `GET /health`、`GET /api/providers`、`POST /api/search` 和 `POST /api/import-browser`。
 
 启动 MCP stdio server：
 
