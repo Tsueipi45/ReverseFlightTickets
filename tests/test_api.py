@@ -6,6 +6,7 @@ from pytest import MonkeyPatch
 
 from reverse_flight_tickets import api
 from reverse_flight_tickets.api import app
+from tests.test_trip_planner import RoutePriceProvider
 
 
 def test_api_health() -> None:
@@ -15,6 +16,51 @@ def test_api_health() -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_web_ui_uses_searchable_option_lists_for_trip_plan_fields() -> None:
+    client = TestClient(app)
+
+    response = client.get("/")
+    html = response.text
+
+    assert response.status_code == 200
+    assert 'data-option-picker="trip_origin_city"' in html
+    assert 'data-option-picker="trip_destination_city"' in html
+    assert 'data-option-picker="trip_source_market"' in html
+    assert 'data-option-picker="trip_target_currency"' in html
+    assert 'data-option-picker="trip_connection_city"' in html
+    assert 'data-option-picker="trip_flight_stopover_city"' in html
+    assert 'id="trip_connection_type"' in html
+    assert 'id="trip_flight_filter"' in html
+    assert 'id="trip_origin_city_search"' not in html
+    assert '<input id="trip_origin_city" autocomplete="off"' not in html
+    assert "Type to filter" in html
+    assert "No matching option. All supported options are shown below." in html
+    assert '.option-picker[data-open="true"] .option-list' in html
+    assert "China mainland" not in html
+
+
+def test_api_trip_plan_metadata_returns_city_market_and_rail_options() -> None:
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/trip-plan/metadata",
+        params={"origin_city": "Nanjing", "destination_city": "Taipei"},
+    )
+
+    data = response.json()
+    assert response.status_code == 200
+    assert {"Nanjing", "Beijing", "Hong Kong", "Macau"} <= {
+        city["value"] for city in data["cities"]
+    }
+    assert data["rail_connection_options"][0]["value"] == "Shanghai"
+    assert [market["label"] for market in data["markets"][:4]] == [
+        "中国大陆",
+        "中国香港",
+        "中国澳门",
+        "中国台湾",
+    ]
 
 
 def test_api_search_returns_manual_offer() -> None:
@@ -209,6 +255,110 @@ def test_api_currency_convert_uses_configured_rates(
         "converted_amount": "311.50",
         "rate": "0.140000",
     }
+
+
+def test_api_trip_plan_returns_nanjing_taipei_options(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "trip-plan-api.sqlite3"
+    monkeypatch.setattr(
+        api.AppConfig,
+        "from_env",
+        classmethod(lambda cls: cls(database_url=f"sqlite:///{database_path}")),
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/trip-plan",
+        json={
+            "departure_date": "2026-07-01",
+            "return_date": "2026-07-08",
+            "provider_names": ["skyscanner"],
+        },
+    )
+
+    data = response.json()
+    assert response.status_code == 200
+    assert {option["option_id"] for option in data["options"]} == {
+        "nanjing-flight",
+        "shanghai-rail-flight",
+    }
+    assert all(option["flight_offers"] for option in data["options"])
+    assert data["summary"].startswith("Need priced flight offers")
+    assert data["recommended_option"]["option_id"] == "nanjing-flight"
+
+
+def test_api_trip_plan_accepts_manual_exchange_rate(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "trip-plan-rate-api.sqlite3"
+    monkeypatch.setattr(
+        api.AppConfig,
+        "from_env",
+        classmethod(lambda cls: cls(database_url=f"sqlite:///{database_path}")),
+    )
+    monkeypatch.setattr(
+        api,
+        "providers_from_names",
+        lambda provider_names: (RoutePriceProvider({("NKG", "TPE"): ("327.70", "USD")}),),
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/trip-plan",
+        json={
+            "departure_date": "2026-07-01",
+            "return_date": "2026-07-08",
+            "include_shanghai_rail": False,
+            "manual_exchange_rates": ["USD:CNY=7.20"],
+        },
+    )
+
+    data = response.json()
+    assert response.status_code == 200
+    assert data["recommended_option"]["flight_amount"] == "2359.44"
+    assert data["recommended_option"]["flight_currency"] == "CNY"
+    assert data["recommended_option"]["total_amount"] == "2359.44"
+    assert data["recommended_option"]["price_status"] == "priced"
+
+
+def test_api_trip_plan_accepts_connection_city_fields(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "trip-plan-connection-api.sqlite3"
+    monkeypatch.setattr(
+        api.AppConfig,
+        "from_env",
+        classmethod(lambda cls: cls(database_url=f"sqlite:///{database_path}")),
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/trip-plan",
+        json={
+            "origin_city": "Hangzhou",
+            "destination_city": "Taipei",
+            "departure_date": "2026-07-01",
+            "return_date": "2026-07-08",
+            "include_shanghai_rail": False,
+            "rail_connection_city": "Shanghai",
+            "airport_stopover_city": "Hong Kong",
+            "flight_filter": "direct",
+            "provider_names": ["skyscanner"],
+        },
+    )
+
+    data = response.json()
+    assert response.status_code == 200
+    assert {option["option_id"] for option in data["options"]} == {
+        "hangzhou-flight",
+        "shanghai-rail-flight",
+        "hongkong-airport-stopover",
+    }
+    assert data["request"]["flight_filter"] == "direct"
 
 
 def test_api_search_aggregates_route_snapshots_from_other_sources(

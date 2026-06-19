@@ -37,6 +37,7 @@ from reverse_flight_tickets.storage import (
     SqliteSearchRepository,
     SqliteWatchlistRepository,
 )
+from reverse_flight_tickets.trip_planner import TripPlanRequest, TripPlanResult, TripPlanner
 
 
 app = typer.Typer(help="ReverseFlightTickets CLI")
@@ -171,6 +172,110 @@ def search(
         typer.echo(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     elif output == "table":
         typer.echo(_format_table(result))
+    else:
+        raise typer.BadParameter("output must be table or json")
+
+
+@app.command("trip-plan")
+def trip_plan(
+    departure_date: Annotated[
+        str,
+        typer.Option("--departure-date", help="Departure date, YYYY-MM-DD"),
+    ],
+    return_date: Annotated[
+        str,
+        typer.Option("--return-date", help="Return date, YYYY-MM-DD"),
+    ],
+    origin_city: Annotated[
+        str,
+        typer.Option("--origin-city", help="Origin city for the vertical MVP."),
+    ] = "Nanjing",
+    destination_city: Annotated[
+        str,
+        typer.Option("--destination-city", help="Destination city for the vertical MVP."),
+    ] = "Taipei",
+    passenger_count: Annotated[
+        int,
+        typer.Option("--passenger-count", min=1, help="Adult passenger count"),
+    ] = 1,
+    cabin: Annotated[
+        str,
+        typer.Option(help="Cabin: economy, premium_economy, business, first"),
+    ] = "economy",
+    source_market: Annotated[
+        str,
+        typer.Option("--source-market", help="Point-of-sale market for this MVP."),
+    ] = "CN",
+    target_currency: Annotated[
+        str,
+        typer.Option("--target-currency", help="Currency used for plan comparison."),
+    ] = "CNY",
+    include_shanghai_rail: Annotated[
+        bool,
+        typer.Option("--include-shanghai-rail/--no-shanghai-rail"),
+    ] = True,
+    rail_connection_city: Annotated[
+        str | None,
+        typer.Option("--rail-connection-city", help="Optional rail connection city."),
+    ] = None,
+    airport_stopover_city: Annotated[
+        str | None,
+        typer.Option("--airport-stopover-city", help="Optional airport stopover city."),
+    ] = None,
+    flight_filter: Annotated[
+        str,
+        typer.Option("--flight-filter", help="Flight filter: all, direct, or via_city."),
+    ] = "all",
+    flight_stopover_city: Annotated[
+        str | None,
+        typer.Option("--flight-stopover-city", help="Only show flights via this city."),
+    ] = None,
+    manual_rate: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--manual-rate",
+            help="Manual exchange rate, e.g. USD:CNY=7.20; repeatable.",
+        ),
+    ] = None,
+    provider: Annotated[
+        list[str] | None,
+        typer.Option("--provider", help="Provider to include; repeatable."),
+    ] = None,
+    include_test_carriers: Annotated[
+        bool,
+        typer.Option("--include-test-carriers", help="Show sandbox/test carriers."),
+    ] = False,
+    output: Annotated[
+        str,
+        typer.Option("--output", help="Output format: table or json"),
+    ] = "table",
+) -> None:
+    """Compare Nanjing-Taipei with Shanghai rail plus flight options."""
+
+    result = asyncio.run(
+        _run_trip_plan(
+            origin_city=origin_city,
+            destination_city=destination_city,
+            departure_date=departure_date,
+            return_date=return_date,
+            passenger_count=passenger_count,
+            cabin=cabin,
+            source_market=source_market,
+            target_currency=target_currency,
+            include_shanghai_rail=include_shanghai_rail,
+            rail_connection_city=rail_connection_city,
+            airport_stopover_city=airport_stopover_city,
+            flight_filter=flight_filter,
+            flight_stopover_city=flight_stopover_city,
+            manual_rate=tuple(manual_rate or ()),
+            provider=tuple(provider or ()),
+            include_test_carriers=include_test_carriers,
+        )
+    )
+    if output == "json":
+        typer.echo(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    elif output == "table":
+        typer.echo(_format_trip_plan(result))
     else:
         raise typer.BadParameter("output must be table or json")
 
@@ -569,6 +674,61 @@ async def _run_search(
     return result
 
 
+async def _run_trip_plan(
+    *,
+    origin_city: str,
+    destination_city: str,
+    departure_date: str,
+    return_date: str,
+    passenger_count: int,
+    cabin: str,
+    source_market: str,
+    target_currency: str,
+    include_shanghai_rail: bool,
+    manual_rate: tuple[str, ...],
+    provider: tuple[str, ...],
+    include_test_carriers: bool,
+    rail_connection_city: str | None = None,
+    airport_stopover_city: str | None = None,
+    flight_filter: str = "all",
+    flight_stopover_city: str | None = None,
+) -> TripPlanResult:
+    config = AppConfig.from_env()
+    request = TripPlanRequest.from_mapping(
+        {
+            "origin_city": origin_city,
+            "destination_city": destination_city,
+            "departure_date": departure_date,
+            "return_date": return_date,
+            "passenger_count": passenger_count,
+            "cabin": cabin,
+            "source_market": source_market,
+            "target_currency": target_currency,
+            "include_shanghai_rail": include_shanghai_rail,
+            "rail_connection_city": rail_connection_city,
+            "airport_stopover_city": airport_stopover_city,
+            "flight_filter": flight_filter,
+            "flight_stopover_city": flight_stopover_city,
+            "manual_exchange_rates": manual_rate,
+        }
+    )
+    providers = _providers_from_names(provider, include_research=False)
+    planner = TripPlanner(
+        providers,
+        timeout_seconds=config.provider_timeout_seconds,
+        excluded_carriers=() if include_test_carriers else DEFAULT_EXCLUDED_CARRIERS,
+        currency_converter=_currency_converter_from_config(config),
+        payment_fee_rate=config.payment_fee_rate,
+        baggage_fee_amount=config.baggage_fee_amount,
+        repository=SqliteSearchRepository(config.database_url),
+    )
+    context = ProviderContext(
+        credentials=config.provider_secret_map(),
+        timeout_seconds=config.provider_timeout_seconds,
+    )
+    return await planner.plan(request, context)
+
+
 async def _run_watchlist(
     *,
     item_id: str | None = None,
@@ -821,6 +981,59 @@ def _format_table(result: SearchRunResult) -> str:
         )
     if result.warnings:
         lines.append("")
+        lines.extend(f"Warning: {warning}" for warning in result.warnings)
+    return "\n".join(lines)
+
+
+def _format_trip_plan(result: TripPlanResult) -> str:
+    rows = [
+        (
+            "option",
+            "total",
+            "flight",
+            "ground",
+            "status",
+            "airports",
+            "best_source",
+            "duration",
+            "links",
+        )
+    ]
+    for option in result.options:
+        total = (
+            f"{option.total_amount} {option.currency}"
+            if option.total_amount is not None
+            else "-"
+        )
+        flight = (
+            f"{option.flight_amount} {option.flight_currency or option.currency}"
+            if option.flight_amount is not None
+            else "-"
+        )
+        ground = f"{option.ground_amount} {option.currency}"
+        airports = (
+            f"{'/'.join(option.flight_origin_airports)}->"
+            f"{'/'.join(option.flight_destination_airports)}"
+        )
+        source = option.best_flight_offer.provider if option.best_flight_offer else "-"
+        links = ",".join(link.provider for link in option.verification_links) or "-"
+        rows.append(
+            (
+                option.title,
+                total,
+                flight,
+                ground,
+                option.price_status,
+                airports,
+                source,
+                _format_minutes(option.estimated_total_duration_minutes),
+                links,
+            )
+        )
+    lines = _format_rows(rows).splitlines()
+    lines.append("")
+    lines.append(f"Summary: {result.summary}")
+    if result.warnings:
         lines.extend(f"Warning: {warning}" for warning in result.warnings)
     return "\n".join(lines)
 

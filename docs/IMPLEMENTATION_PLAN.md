@@ -38,6 +38,12 @@ ReverseFlightTickets
 │   ├── CLI
 │   ├── REST API
 │   └── MCP Server
+├── Trip Planner
+│   ├── city-level request
+│   ├── airport alternative generation
+│   ├── ground transport estimate
+│   ├── plan-level total cost
+│   └── recommendation summary
 ├── Search Orchestrator
 │   ├── itinerary expansion
 │   ├── market/currency expansion
@@ -123,6 +129,7 @@ ReverseFlightTickets
 src/reverse_flight_tickets/
 ├── cli.py # 输入: 命令行参数或 SearchRequest JSON; 输出: 表格/JSON 搜索结果, 将 SearchRequest 交给 SearchOrchestrator
 ├── config.py # 输入: 环境变量/.env 中的默认市场、币种、provider token; 输出: AppConfig、ProviderContext credentials
+├── trip_planner.py # 输入: 城市级出行意图; 输出: 机票+地面交通的完整方案、总价、状态和推荐
 ├── domain/
 │   ├── itinerary.py # 输入: 用户行程、日期、乘客、舱位、市场/币种偏好; 输出: SearchRequest、Segment、Passenger
 │   ├── offer.py # 输入: provider 原始报价归一化字段; 输出: Offer、ProviderQuote、FareComponent、BaggageRule、ChangeRefundRule
@@ -221,6 +228,16 @@ RiskFlag
    - 最低风险价。
    - 与常规购票方式的差价。
    - 购买入口或人工检查清单。
+
+## Trip Planner 流程
+
+1. 接收城市级输入：出发城市、目的城市、往返日期、乘客、舱位、目标币种和可选手动汇率。
+2. 生成完整出行方案：
+   - 南京出发机票：`NKG -> TPE/TSA` 往返。
+   - 上海接驳方案：南京南到上海机场区域往返高铁估价，加 `PVG/SHA -> TPE/TSA` 往返机票。
+3. 对每个候选机场对调用既有 `SearchOrchestrator`，复用 provider、历史快照、汇率、过滤和排序链路。
+4. 对每个完整方案选择最低可比机票，叠加地面交通成本，输出 `priced`、`needs_exchange_rate`、`needs_manual_flight_price` 或 `no_flights` 状态。
+5. 输出方案级推荐和摘要，例如上海接驳方案是否比南京出发便宜。
 
 ## Provider 接入优先级
 
@@ -321,6 +338,15 @@ RiskFlag
 - [x] 提供 MCP server，让 LLM/Agent 调用查票工具。
 - [x] 提供 Web UI 或桌面 UI。
 - [ ] 增加用户配置、凭据加密和审计日志。
+
+### Milestone 9：Trip Planner 产品化
+
+- [x] 增加南京-台北垂直 MVP，比较南京出发机票与上海高铁接驳加上海出发机票。
+- [x] 首屏 Web UI 改为城市级 Trip Plan 表单，保留原机场级搜索作为高级工具。
+- [x] 支持手动汇率输入，解决异币种 API 报价无法合成方案总价的问题。
+- [ ] 把城市、机场、地面交通估价和接驳缓冲从硬编码迁移到配置。
+- [ ] 增加真实或半自动高铁价格来源。
+- [ ] 扩展更多城市对和替代机场组合。
 
 ## 合规与风控要求
 

@@ -164,6 +164,68 @@ def test_cli_fx_uses_configured_rates(monkeypatch: MonkeyPatch) -> None:
     assert '"converted_amount": "311.50"' in result.stdout
 
 
+def test_cli_trip_plan_outputs_vertical_mvp_options(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "trip-plan-cli.sqlite3"
+    monkeypatch.setattr(
+        cli.AppConfig,
+        "from_env",
+        classmethod(lambda cls: AppConfig(database_url=f"sqlite:///{database_path}")),
+    )
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "trip-plan",
+            "--departure-date",
+            "2026-07-01",
+            "--return-date",
+            "2026-07-08",
+            "--provider",
+            "skyscanner",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert '"option_id": "nanjing-flight"' in result.stdout
+    assert '"option_id": "shanghai-rail-flight"' in result.stdout
+    assert "Need priced flight offers" in result.stdout
+
+
+def test_run_trip_plan_accepts_manual_rate(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    database_path = tmp_path / "trip-plan-rate-cli.sqlite3"
+    monkeypatch.setattr(
+        cli.AppConfig,
+        "from_env",
+        classmethod(lambda cls: AppConfig(database_url=f"sqlite:///{database_path}")),
+    )
+
+    result = runner.invoke(
+        cli.app,
+        [
+            "trip-plan",
+            "--departure-date",
+            "2026-07-01",
+            "--return-date",
+            "2026-07-08",
+            "--provider",
+            "skyscanner",
+            "--manual-rate",
+            "USD:CNY=7.20",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert '"manual_exchange_rates": [' in result.stdout
+    assert '"USD:CNY=7.20"' in result.stdout
+
+
 def test_run_watchlist_persists_snapshot(tmp_path: Path) -> None:
     request = SearchRequest.from_mapping(
         {

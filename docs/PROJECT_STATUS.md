@@ -1,11 +1,12 @@
 # ReverseFlightTickets 当前状态
 
-更新时间：2026-05-29
+更新时间：2026-06-19
 
 ## 已完成
 
 - 项目工程化：`pyproject.toml`、`src/` 包结构、`.env.example`、`ruff`、`mypy`、`pytest`、GitHub Actions CI。
 - CLI：`rft search` 支持命令行参数、JSON 输入、表格/JSON 输出、provider 选择、research provider、SQLite 快照保存；`rft watchlist` 支持 add/list/run/schedule。
+- Trip Planner 垂直 MVP：`rft trip-plan`、`POST /api/trip-plan` 和 Web UI 首屏支持南京-台北往返方案规划，比较南京出发机票与南京到上海高铁加上海出发机票；暂不加入反向票玩法。
 - 领域模型：`SearchRequest`、`Segment`、`Passenger`、`Offer`、`ProviderQuote`、`RiskFlag`、行李/退改签/中转信息。
 - Provider 抽象：统一 `FlightProvider` 协议、capability、provider context、并发查询、超时和失败隔离。
 - API provider：Duffel sandbox/API connector、Amadeus Self-Service test API connector。
@@ -16,9 +17,10 @@
 - 搜索扩展：销售地/币种组合、可配置日期弹性窗口、stopover multi-city 候选。
 - 结果处理：归一化、去重、指定航司过滤、基础排序、`lowest_price` / `lowest_risk` / `best_value` 推荐，以及“省钱金额 vs 风险”的排序结果。
 - 价格归一化：静态汇率表、可选 Frankfurter 外部汇率源、本地 JSON 汇率缓存、支付费率、行李费估算接入搜索链路，排序前计算可比价。
+- Trip Planner 手动汇率：方案规划支持 `USD:CNY=7.20` 这类临时汇率输入，用于把 API provider 返回的异币种机票与人民币高铁估价合成为可比较总价；缺少汇率时显示 `needs_exchange_rate`，不把异币种报价误判为无结果。
 - 汇率工具：`rft fx`、`/api/currency/convert` 和 Web UI `Currency Tool` 支持使用同一套汇率配置做手动换算。
 - 风险策略：默认标记 hidden-city 排除；统一处理 split-ticket、self-transfer 和退改签规则风险权重。
-- 平台化基础：FastAPI REST 服务、`/api/search`、`/api/import-browser`、`/api/providers`、`/health`，以及内置本地 Web UI。
+- 平台化基础：FastAPI REST 服务、`/api/trip-plan`、`/api/search`、`/api/import-browser`、`/api/providers`、`/health`，以及内置本地 Web UI；Web UI 已合并为单一 Trip Plan 搜索入口，机场级搜索保留为 CLI/API 高级能力。
 - MCP server：提供 stdio JSON-RPC MCP 服务，包含 `list_providers` 和 `search_flights` 工具。
 - 安全加固：API 请求禁止额外字段和客户端覆盖数据库 URL；SQLite 仓库限制本地 SQLite URL；外部汇率源强制 HTTPS；MCP 支持 Content-Length framing；Web UI 结果渲染避免直接拼接未信任 HTML。
 - 持久化：SQLite 搜索快照保存和读取。
@@ -30,6 +32,7 @@
 ## 未完成
 
 - Multi-city 候选生成已支持显式 stopover；自动 stopover/路线发现仍未实现。
+- Trip Planner 仍是垂直 MVP，仅支持南京-台北场景；城市/机场配置、地面交通价格和接驳时间仍需扩展为可配置或真实数据源。
 - Watchlist 已有 SQLite 持久化、一次性 run 和本地 interval schedule；分布式后台调度仍未实现。
 - Skyscanner、Trip.com、飞猪仍是人工 deep link，没有接入官方/合作 API。
 - 浏览器脚本采价是当前携程/飞猪真实页面可见价格的阶段性方案；后续拿到官方/合作 API 后应接入 provider connector，并保留脚本作为人工核验/fallback。
@@ -48,6 +51,6 @@
 
 最近一次本地结果：
 
-- `pytest`：73 passed
+- `pytest`：80 passed
 - `ruff`：passed
 - `mypy`：passed

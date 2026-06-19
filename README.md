@@ -8,6 +8,7 @@ ReverseFlightTickets 是一个用于反向票查询与订购流程辅助的 Pyth
 
 ## 功能规划
 
+- Trip Planner 垂直 MVP：支持南京-台北往返方案规划，比较南京出发机票与南京到上海高铁加上海出发机票的门到门总价。
 - CLI 查价聚合：支持命令行参数和 JSON 请求输入。
 - 官方/API provider：已支持 Duffel sandbox 和 Amadeus Self-Service test API。
 - 人工核验 deep link：已支持 Skyscanner、Trip.com、飞猪、Google Flights research、Kiwi research。
@@ -61,6 +62,22 @@ pip install -r requirements.txt
 ```
 
 ## 使用方式
+
+南京到台北垂直 MVP：比较南京出发机票，和南京到上海高铁加上海出发机票两类方案：
+
+```bash
+rft trip-plan --departure-date 2026-07-01 --return-date 2026-07-08
+```
+
+如果 provider 返回美元报价，但目标总价要用人民币比较，可以临时输入手动汇率：
+
+```bash
+rft trip-plan --departure-date 2026-07-01 --return-date 2026-07-08 --provider duffel --manual-rate USD:CNY=7.20
+```
+
+当前该入口暂时只支持 `Nanjing -> Taipei` 往返场景，不加入反向票玩法。上海接驳方案的高铁费用使用静态估价；机票价格会优先使用已有 provider/API 结果和同航线历史快照。只有人工核验链接时会明确标记为需要导入或查询到带价格的机票报价；有异币种机票但缺少汇率时会标记为 `needs_exchange_rate`。
+
+Web UI 首屏已经合并为单一 `Trip Plan` 搜索入口。页面会同时显示方案总价比较和底层候选机票报价明细；机场级 `rft search` 和 `/api/search` 保留为 CLI/API 高级调试能力。
 
 运行一次基础搜索：
 
@@ -210,7 +227,7 @@ rft watchlist schedule --interval-seconds 3600 --iterations 3
 rft serve --host 127.0.0.1 --port 8000
 ```
 
-打开 `http://127.0.0.1:8000/` 使用网页界面；REST 端点包括 `GET /health`、`GET /api/providers`、`POST /api/search`、`POST /api/import-browser` 和 `POST /api/currency/convert`。
+打开 `http://127.0.0.1:8000/` 使用网页界面；REST 端点包括 `GET /health`、`GET /api/providers`、`POST /api/trip-plan`、`POST /api/search`、`POST /api/import-browser` 和 `POST /api/currency/convert`。
 
 启动 MCP stdio server：
 
@@ -248,6 +265,7 @@ ReverseFlightTickets/
 │       ├── cli.py
 │       ├── config.py
 │       ├── mcp_server.py
+│       ├── trip_planner.py
 │       ├── domain/
 │       ├── providers/
 │       ├── search/
