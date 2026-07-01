@@ -139,6 +139,12 @@ rft search --origin PVG --destination LAX --departure-date 2026-10-01 --return-d
 ```bash
 rft search --origin PVG --destination LAX --departure-date 2026-10-01 --return-date 2026-10-15 --date-flexibility-days 2 --output json
 ```
+限制最大中转时长；下面示例会过滤掉任一中转超过 4 小时的可识别报价。缺少结构化中转时长的人工核验/不完整报价会保留，避免误删仍需人工核验的数据：
+
+```bash
+rft search --origin PVG --destination LAX --departure-date 2026-10-01 --max-layover-hours 4
+```
+
 
 生成 stopover multi-city 候选：
 

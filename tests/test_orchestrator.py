@@ -1,7 +1,14 @@
 from decimal import Decimal
 from typing import Sequence
 
-from reverse_flight_tickets.domain import Offer, RiskFlag, SearchRequest, Segment, TicketingType
+from reverse_flight_tickets.domain import (
+    Layover,
+    Offer,
+    RiskFlag,
+    SearchRequest,
+    Segment,
+    TicketingType,
+)
 from reverse_flight_tickets.pricing import StaticRateConverter
 from reverse_flight_tickets.providers import SkyscannerProvider
 from reverse_flight_tickets.providers.base import ProviderCapability, ProviderContext
@@ -107,6 +114,45 @@ def test_orchestrator_filter_warning_mentions_carrier() -> None:
     )
 
     assert carrier_filter_warnings(result) == ("filtered 1 offer by excluded carrier: ZZ",)
+
+
+def test_orchestrator_filters_offers_over_max_layover_hours() -> None:
+    request = SearchRequest.from_mapping(
+        {
+            "origin": "LHR",
+            "destination": "JFK",
+            "departure_date": "2026-10-01",
+            "max_layover_hours": 4,
+        }
+    )
+    short_layover_offer = Offer(
+        provider="mock",
+        source_market="US",
+        currency="USD",
+        total_amount="300.00",
+        segments=request.segments,
+        layovers=(Layover(airport="KEF", duration_minutes=120),),
+    )
+    long_layover_offer = Offer(
+        provider="mock",
+        source_market="US",
+        currency="USD",
+        total_amount="200.00",
+        segments=request.segments,
+        layovers=(Layover(airport="KEF", duration_minutes=360),),
+    )
+
+    result = __import__("asyncio").run(
+        SearchOrchestrator([StaticProvider((short_layover_offer, long_layover_offer))]).search(
+            request
+        )
+    )
+
+    assert len(result.offers) == 1
+    assert result.offers[0].total_amount == Decimal("300.00")
+    assert result.offers[0].layovers[0].duration_minutes == 120
+    assert RiskFlag.HIDDEN_CITY_EXCLUDED in result.offers[0].risk_flags
+    assert result.warnings == ("filtered 1 offer by max layover: 4h",)
 
 
 def test_orchestrator_expands_date_flexibility_and_labels_policy() -> None:
