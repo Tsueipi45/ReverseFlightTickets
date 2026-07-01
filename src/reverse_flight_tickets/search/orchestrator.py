@@ -21,8 +21,10 @@ from reverse_flight_tickets.providers.base import FlightProvider, ProviderContex
 from reverse_flight_tickets.search.expansion import SearchVariant, expand_request
 from reverse_flight_tickets.search.filters import (
     carrier_filter_warnings,
+    filter_offers_by_request_policy,
     filter_offers_by_carrier,
     normalize_carrier_codes,
+    request_policy_filter_warnings,
 )
 from reverse_flight_tickets.search.normalize import normalize_offers
 from reverse_flight_tickets.search.rank import rank_offers
@@ -155,10 +157,15 @@ class SearchOrchestrator:
             baggage_fee_amount=self.baggage_fee_amount,
         )
         policy_applied = apply_strategy_policy(request, priced)
-        deduped = self._deduplicate(policy_applied)
+        request_filtered = filter_offers_by_request_policy(policy_applied, request)
+        deduped = self._deduplicate(request_filtered.offers)
         filtered = filter_offers_by_carrier(deduped, self.excluded_carriers)
         ranked = rank_offers(filtered.offers)
-        warnings = self._warnings(provider_runs) + carrier_filter_warnings(filtered)
+        warnings = (
+            self._warnings(provider_runs)
+            + request_policy_filter_warnings(request_filtered)
+            + carrier_filter_warnings(filtered)
+        )
         return SearchRunResult(
             request=request,
             offers=ranked,

@@ -15,7 +15,7 @@
 - 浏览器报价导入：`rft import-browser` 和 Web UI `Import Browser Offers` 支持导入脚本 JSON/CSV，归一化为 `Offer` 后参与排序、推荐和 SQLite 快照；导入器可从飞猪 `page_url` 兜底补齐缺失查询日期。
 - Web UI 聚合：`/api/search` 和 `/api/import-browser` 会按同航线、日期、乘客和舱位读取 SQLite 历史快照，把已保存的脚本报价与当前 provider 结果合并展示和推荐。
 - 搜索扩展：销售地/币种组合、可配置日期弹性窗口、stopover multi-city 候选。
-- 结果处理：归一化、去重、指定航司过滤、基础排序、`lowest_price` / `lowest_risk` / `best_value` 推荐，以及“省钱金额 vs 风险”的排序结果。
+- 结果处理：归一化、去重、指定航司过滤、最大中转时长过滤、基础排序、`lowest_price` / `lowest_risk` / `best_value` 推荐，以及“省钱金额 vs 风险”的排序结果。
 - 价格归一化：静态汇率表、可选 Frankfurter 外部汇率源、本地 JSON 汇率缓存、支付费率、行李费估算接入搜索链路，排序前计算可比价。
 - Trip Planner 手动汇率：方案规划支持 `USD:CNY=7.20` 这类临时汇率输入，用于把 API provider 返回的异币种机票与人民币高铁估价合成为可比较总价；缺少汇率时显示 `needs_exchange_rate`，不把异币种报价误判为无结果。
 - 汇率工具：`rft fx`、`/api/currency/convert` 和 Web UI `Currency Tool` 支持使用同一套汇率配置做手动换算。
